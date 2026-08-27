@@ -149,94 +149,125 @@ st.markdown(
     footer { display: none !important; }
     #MainMenu { display: none !important; }
     
-    /* Card Container style that adapts perfectly to Pristine Light Theme */
-    .resource-card {
-        background: #ffffff;
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        border-radius: 16px;
-        padding: 24px;
-        margin-bottom: 20px;
+    /* Cyberpunk / SaaS Card Design */
+    .cyber-card {
+        background: #0b1121;
+        border: 1px solid #1e293b;
+        border-radius: 12px;
+        margin-bottom: 24px;
+        overflow: hidden;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.25);
     }
     
-    .resource-card:hover {
-        transform: translateY(-6px);
-        border-color: rgba(79, 70, 229, 0.3);
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    .cyber-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 0 15px rgba(245, 158, 11, 0.15);
+        border-color: #334155;
     }
     
-    /* Category Left Border Accents */
-    .card-github { border-left: 5px solid #6e5494 !important; }
-    .card-hf { border-left: 5px solid #ffca28 !important; }
-    .card-arxiv { border-left: 5px solid #b31b1b !important; }
-    .card-pypi { border-left: 5px solid #3775a9 !important; }
-    .card-blog { border-left: 5px solid #10b981 !important; }
-    .card-reddit { border-left: 5px solid #ff4500 !important; }
-    .card-ph { border-left: 5px solid #da552f !important; }
-    .card-course { border-left: 5px solid #f59e0b !important; }
-    .card-yt { border-left: 5px solid #dc2626 !important; }
-
-    /* High-contrast Title Link using the primary theme color */
-    .resource-title {
-        font-size: 1.2rem;
+    .cyber-header {
+        background: linear-gradient(90deg, #4c1d95, #312e81, #1e1b4b);
+        padding: 12px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #334155;
+    }
+    
+    .cyber-badge {
+        color: #fbbf24;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.8rem;
         font-weight: 700;
-        color: var(--primary-color) !important;
-        text-decoration: none !important;
-        margin-bottom: 8px;
-        display: inline-block;
+        letter-spacing: 1px;
+        text-transform: uppercase;
     }
     
-    .resource-title:hover {
-        text-decoration: underline !important;
-        opacity: 0.85;
-    }
-    
-    /* High contrast description that uses the current Streamlit theme's text color */
-    .resource-desc {
-        font-size: 0.95rem;
-        color: var(--text-color);
-        line-height: 1.6;
-        margin: 0;
-        font-weight: 400;
-    }
-    
-    /* Custom High-Contrast Solid Badges */
-    .resource-badge {
-        display: inline-block;
-        padding: 6px 14px;
-        border-radius: 24px;
+    .cyber-pill {
+        color: #fbbf24;
+        font-family: 'Courier New', Courier, monospace;
         font-size: 0.75rem;
         font-weight: 700;
-        text-transform: uppercase;
-        margin-bottom: 12px;
-        letter-spacing: 0.8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        border: 1px solid rgba(251, 191, 36, 0.5);
+        padding: 4px 12px;
+        border-radius: 20px;
+        background: rgba(251, 191, 36, 0.05);
     }
     
-    .badge-github { background: #6e5494; color: #ffffff !important; }
-    .badge-hf { background: #ffca28; color: #000000 !important; }
-    .badge-arxiv { background: #b31b1b; color: #ffffff !important; }
-    .badge-pypi { background: #3775a9; color: #ffffff !important; }
-    .badge-blog { background: #10b981; color: #ffffff !important; }
-    .badge-reddit { background: #ff4500; color: #ffffff !important; }
-    .badge-ph { background: #da552f; color: #ffffff !important; }
-    .badge-course { background: #f59e0b; color: #ffffff !important; }
-    .badge-yt { background: #dc2626; color: #ffffff !important; }
+    .cyber-body {
+        padding: 24px 20px;
+    }
+    
+    .cyber-title {
+        color: #f8fafc !important;
+        font-size: 1.25rem;
+        font-weight: 700;
+        text-decoration: none !important;
+        margin-bottom: 12px;
+        display: inline-block;
+        line-height: 1.4;
+    }
+    
+    .cyber-title:hover {
+        color: #fbbf24 !important;
+    }
+    
+    .cyber-desc {
+        color: #94a3b8;
+        font-size: 0.95rem;
+        line-height: 1.6;
+        margin-bottom: 20px;
+    }
+    
+    .cyber-nav-btn {
+        display: inline-block;
+        color: #fbbf24 !important;
+        border: 1px solid #fbbf24;
+        border-radius: 20px;
+        padding: 6px 16px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-decoration: none !important;
+        transition: all 0.2s;
+        background: transparent;
+    }
+    
+    .cyber-nav-btn:hover {
+        background: rgba(251, 191, 36, 0.1);
+    }
+    
+    .cyber-footer-btn {
+        display: block;
+        width: 100%;
+        background: linear-gradient(90deg, #f97316, #a855f7);
+        color: #ffffff !important;
+        text-align: center;
+        padding: 14px 0;
+        font-weight: 700;
+        font-size: 1rem;
+        text-decoration: none !important;
+        letter-spacing: 0.5px;
+        transition: opacity 0.2s;
+    }
+    
+    .cyber-footer-btn:hover {
+        opacity: 0.9;
+    }
 
     /* Theme-Adaptive Executive Metric Cards */
     [data-testid="stMetric"] {
-        background: #ffffff !important;
-        border: 1px solid rgba(0, 0, 0, 0.08) !important;
+        background: #0b1121 !important;
+        border: 1px solid #1e293b !important;
         border-radius: 16px !important;
         padding: 16px 20px !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3) !important;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
     [data-testid="stMetric"]:hover {
         transform: translateY(-4px) !important;
-        border-color: rgba(79, 70, 229, 0.3) !important;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+        border-color: rgba(245, 158, 11, 0.5) !important;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4) !important;
     }
     [data-testid="stMetricValue"] {
         font-size: 1.4rem !important;
@@ -694,12 +725,14 @@ else:
                     return "source link"
 
             # Render resource cards list
-            card_class = badge_class.replace("badge-", "card-")
             for item in page_items:
                 link_url = item.get('Link', '#')
                 title_text = item.get('Title', 'Untitled Intelligence')
                 desc_text = item.get('Description', 'No summary provided.')
                 domain_host = get_domain(link_url)
+                
+                # Extract project name or short title for the top right
+                project_name = title_text.split(':')[0].strip() if ':' in title_text else "Resource"
                 
                 # Safe HTML escaping to prevent string breaks
                 safe_title = title_text.replace('"', '&quot;').replace("'", "&#39;")
@@ -707,16 +740,20 @@ else:
 
                 st.markdown(
                     f"""
-                    <div class="resource-card {card_class}">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <span class="resource-badge {badge_class}">{badge_label}</span>
-                            <span class="domain-pill">🌐 {domain_host}</span>
+                    <div class="cyber-card">
+                        <div class="cyber-header">
+                            <span class="cyber-badge">{badge_label} &rarr; {project_name}</span>
+                            <span class="cyber-pill">{domain_host}</span>
                         </div>
-                        <div class="link-wrapper">
-                            <a class="resource-title" href="{link_url}" target="_blank">{title_text}</a>
-                            {generate_pylance_preview(item, category_name, domain_host)}
+                        <div class="cyber-body">
+                            <div class="link-wrapper" style="display:block;">
+                                <a class="cyber-title" href="{link_url}" target="_blank">{category_name} - {title_text}</a>
+                                {generate_pylance_preview(item, category_name, domain_host)}
+                            </div>
+                            <p class="cyber-desc">{desc_text}</p>
+                            <a class="cyber-nav-btn" href="{link_url}" target="_blank">Navigation Menu</a>
                         </div>
-                        <p class="resource-desc">{desc_text}</p>
+                        <a class="cyber-footer-btn" href="{link_url}" target="_blank">🚀 Open Full Resource &rarr;</a>
                     </div>
                     """,
                     unsafe_allow_html=True
