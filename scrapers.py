@@ -541,6 +541,7 @@ def save_updates_to_mongo(client, updates_list):
             "page_description": item.get("PageDescription", item["Description"]),
             "page_image": item.get("PageImage", ""),
             "page_outline": item.get("PageOutline", []),
+            "timestamp": item.get("Timestamp", ""),
             "fetched_at": pd.Timestamp.now().isoformat()
         }
         try:
@@ -574,6 +575,7 @@ def get_persisted_updates_from_mongo(client, update_type):
                 "PageDescription": doc.get("page_description", doc["description"]),
                 "PageImage": doc.get("page_image", ""),
                 "PageOutline": doc.get("page_outline", []),
+                "Timestamp": doc.get("timestamp", ""),
                 "Link": doc["_id"]
             })
     except Exception as e:
