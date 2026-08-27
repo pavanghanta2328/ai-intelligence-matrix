@@ -66,14 +66,20 @@ def load_scraper_config(config_name):
             client.close()
 
     if result is None:
-        # Fallback to local JSON file
-        filename = os.path.join(BASE_DIR, f"{config_name}.json")
-        if os.path.exists(filename):
-            try:
-                with open(filename, "r") as f:
+        # Fallback to local JSON
+        try:
+            # Check both the new config directory and the legacy root directory
+            config_path = os.path.join(BASE_DIR, "config", f"{config_name}.json")
+            legacy_path = os.path.join(BASE_DIR, f"{config_name}.json")
+            
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
                     result = json.load(f)
-            except Exception as e:
-                print(f"JSON config load error for {filename}: {e}")
+            elif os.path.exists(legacy_path):
+                with open(legacy_path, 'r', encoding='utf-8') as f:
+                    result = json.load(f)
+        except Exception as e:
+            print(f"JSON config load error for {config_name}: {e}")
 
     if result is None:
         print(f"Warning: Configuration {config_name} not found in MongoDB or local file.")
