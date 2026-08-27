@@ -701,6 +701,9 @@ else:
                 title_text = item.get('Title', 'Untitled Intelligence')
                 desc_text = item.get('Description', 'No summary provided.')
                 domain_host = get_domain(link_url)
+                timestamp = item.get('Timestamp', '')
+                
+                timestamp_html = f'<span style="color: #10b981; font-size: 0.75rem; font-weight: 600; background: rgba(16,185,129,0.1); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(16,185,129,0.2);">🕒 {timestamp}</span>' if timestamp else ''
                 
                 # Safe HTML escaping to prevent string breaks
                 safe_title = title_text.replace('"', '&quot;').replace("'", "&#39;")
@@ -709,9 +712,12 @@ else:
                 st.markdown(
                     f"""
                     <div class="resource-card {card_class}">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                             <span class="resource-badge {badge_class}">{badge_label}</span>
-                            <span class="domain-pill">🌐 {domain_host}</span>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                {timestamp_html}
+                                <span class="domain-pill">🌐 {domain_host}</span>
+                            </div>
                         </div>
                         <div class="link-wrapper">
                             <a class="resource-title" href="{link_url}" target="_blank">{title_text}</a>

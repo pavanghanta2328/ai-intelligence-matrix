@@ -87,7 +87,38 @@ def load_scraper_config(config_name):
     _CONFIG_CACHE[config_name] = result
     return result
 
+from datetime import datetime, timezone
+from dateutil import parser
 
+def time_ago(date_str):
+    if not date_str:
+        return ""
+    try:
+        dt = parser.parse(date_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        
+        now = datetime.now(timezone.utc)
+        diff = now - dt
+        
+        seconds = diff.total_seconds()
+        if seconds < 0:
+            return "Just now"
+            
+        minutes = seconds / 60
+        hours = minutes / 60
+        days = hours / 24
+        
+        if minutes < 60:
+            return f"{int(minutes)} mins ago"
+        elif hours < 24:
+            return f"{int(hours)} hours ago"
+        elif days < 30:
+            return f"{int(days)} days ago"
+        else:
+            return dt.strftime("%b %d, %Y")
+    except Exception:
+        return ""
 
 # ----------------------------------------------------
 # 🔌 API Fetching Methods
@@ -110,7 +141,8 @@ def get_github_ai_updates():
                     "Type": "GitHub Repo",
                     "Title": item.get('name', 'Unknown'),
                     "Description": item.get('description') or "No description provided.",
-                    "Link": item.get('html_url', 'https://github.com')
+                    "Link": item.get('html_url', 'https://github.com'),
+                    "Timestamp": time_ago(item.get('updated_at', ''))
                 })
     except Exception as e:
         print(f"Error fetching GitHub: {e}")
@@ -132,7 +164,8 @@ def get_huggingface_updates():
                         "Type": "Hugging Face Model",
                         "Title": model_id,
                         "Description": f"Author: {item.get('author', 'Unknown')} | Downloads: {item.get('downloads', 0)} | Likes: {item.get('likes', 0)}",
-                        "Link": f"https://huggingface.co/{model_id}"
+                        "Link": f"https://huggingface.co/{model_id}",
+                        "Timestamp": time_ago(item.get('lastModified', ''))
                     })
     except Exception as e:
         print(f"Error fetching Hugging Face: {e}")
@@ -149,7 +182,8 @@ def get_arxiv_updates():
                 "Type": "arXiv Research Paper",
                 "Title": entry.get('title', 'No Title').replace('\n', ' ').strip(),
                 "Description": entry.get('summary', 'No abstract available.').replace('\n', ' ').strip()[:300] + "...",
-                "Link": entry.get('link', '#')
+                "Link": entry.get('link', '#'),
+                "Timestamp": time_ago(entry.get('published') or entry.get('updated'))
             })
     except Exception as e:
         print(f"Error fetching arXiv: {e}")
@@ -170,7 +204,8 @@ def get_pypi_updates():
                     "Type": "PyPI Release",
                     "Title": title,
                     "Description": desc[:200] + "..." if desc else "New package release on PyPI.",
-                    "Link": entry.get('link', 'https://pypi.org')
+                    "Link": entry.get('link', 'https://pypi.org'),
+                    "Timestamp": time_ago(entry.get('published') or entry.get('updated'))
                 })
         if not packages and feed.entries:
             for entry in feed.entries[:5]:
@@ -178,7 +213,8 @@ def get_pypi_updates():
                     "Type": "PyPI Release",
                     "Title": entry.get('title', 'Unknown Package'),
                     "Description": entry.get('summary', '')[:200] + "...",
-                    "Link": entry.get('link', 'https://pypi.org')
+                    "Link": entry.get('link', 'https://pypi.org'),
+                    "Timestamp": time_ago(entry.get('published') or entry.get('updated'))
                 })
     except Exception as e:
         print(f"Error fetching PyPI: {e}")
@@ -201,7 +237,8 @@ def get_blog_updates():
                         "Type": "Corporate Blog",
                         "Title": f"[{source_name.upper()}] {entry.get('title', 'No Title')}",
                         "Description": entry.get('summary', 'Click link to read')[:250] + "...",
-                        "Link": entry.get('link', '#')
+                        "Link": entry.get('link', '#'),
+                        "Timestamp": time_ago(entry.get('published') or entry.get('updated'))
                     })
         except:
             pass
@@ -232,7 +269,8 @@ def get_reddit_updates():
                     "Type": "Reddit Discussion",
                     "Title": entry.get('title', 'No Title'),
                     "Description": f"Author: {entry.get('author', 'Unknown')}",
-                    "Link": entry.get('link', 'https://reddit.com')
+                    "Link": entry.get('link', 'https://reddit.com'),
+                    "Timestamp": time_ago(entry.get('published') or entry.get('updated'))
                 })
     except Exception as e:
         print(f"Error fetching Reddit: {e}")
@@ -256,7 +294,8 @@ def get_producthunt_updates():
                         "Type": "Product Hunt Launch",
                         "Title": title,
                         "Description": desc[:250] + "...",
-                        "Link": entry.get('link', 'https://producthunt.com')
+                        "Link": entry.get('link', 'https://producthunt.com'),
+                        "Timestamp": time_ago(entry.get('published') or entry.get('updated'))
                     })
     except Exception as e:
         print(f"Error fetching Product Hunt: {e}")
@@ -280,7 +319,8 @@ def get_course_updates():
                         "Type": "AI Course",
                         "Title": title,
                         "Description": desc[:250] + "...",
-                        "Link": entry.get('link', '#')
+                        "Link": entry.get('link', '#'),
+                        "Timestamp": time_ago(entry.get('published') or entry.get('updated'))
                     })
     except:
         pass
@@ -316,6 +356,7 @@ def get_youtube_updates():
                             v_title = v_id = ""
                             v_channel = "YouTube"
                             v_desc = "Watch latest video on YouTube."
+                            v_time = ""
                             if video_renderer:
                                 v_title = video_renderer.get("title", {}).get("runs", [{}])[0].get("text", "")
                                 v_id = video_renderer.get("videoId", "")
@@ -333,12 +374,20 @@ def get_youtube_updates():
                                 v_title = lockup_model.get("metadata", {}).get("lockupMetadataViewModel", {}).get("title", {}).get("content", "")
                                 v_id = lockup_model.get("contentId", "")
                                 v_channel = lockup_model.get("shortBylineText", {}).get("runs", [{}])[0].get("text", "YouTube")
+                            
+                            # Fallback extraction for YouTube relative time text (e.g. '2 weeks ago')
+                            if video_renderer:
+                                v_time = video_renderer.get("publishedTimeText", {}).get("simpleText", "")
+                            elif lockup_model:
+                                v_time = lockup_model.get("metadata", {}).get("lockupMetadataViewModel", {}).get("metadata", {}).get("primaryMetadataViewModel", {}).get("publishedTimeText", {}).get("content", "")
+
                             if v_title and v_id:
                                 results.append({
                                     "Type": "YouTube Video",
                                     "Title": f"[{v_channel.upper()}] {v_title}",
                                     "Description": v_desc[:250] + "..." if len(v_desc) > 250 else v_desc,
-                                    "Link": f"https://www.youtube.com/watch?v={v_id}"
+                                    "Link": f"https://www.youtube.com/watch?v={v_id}",
+                                    "Timestamp": v_time
                                 })
                                 count += 1
                                 if count >= 5:
