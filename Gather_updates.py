@@ -711,20 +711,20 @@ else:
 
                 st.markdown(
                     f"""
-                    <div class="resource-card {card_class}">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                            <span class="resource-badge {badge_class}">{badge_label}</span>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                {timestamp_html}
-                                <span class="domain-pill">🌐 {domain_host}</span>
-                            </div>
-                        </div>
-                        <div class="link-wrapper">
-                            <a class="resource-title" href="{link_url}" target="_blank">{title_text}</a>
-                            {generate_pylance_preview(item, category_name, domain_host)}
-                        </div>
-                        <p class="resource-desc">{desc_text}</p>
-                    </div>
+<div class="resource-card {card_class}">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <span class="resource-badge {badge_class}">{badge_label}</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            {timestamp_html}
+            <span class="domain-pill">🌐 {domain_host}</span>
+        </div>
+    </div>
+    <div class="link-wrapper">
+        <a class="resource-title" href="{link_url}" target="_blank">{title_text}</a>
+        {generate_pylance_preview(item, category_name, domain_host)}
+    </div>
+    <p class="resource-desc">{desc_text}</p>
+</div>
                     """,
                     unsafe_allow_html=True
                 )
