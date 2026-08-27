@@ -1,0 +1,554 @@
+import requests
+import feedparser
+import pandas as pd
+import pymongo
+import os
+import json
+import re
+
+# Resolve base directory relative to scrapers.py
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Cleanup legacy configurations
+legacy_path = os.path.join(BASE_DIR, "youtube_rss_channels.json")
+if os.path.exists(legacy_path):
+    try:
+        os.remove(legacy_path)
+    except:
+        pass
+
+def _get_db_client():
+    uri = os.environ.get("mongo_uri")
+    if not uri:
+        secrets_path = os.path.join(BASE_DIR, ".streamlit", "secrets.toml")
+        if os.path.exists(secrets_path):
+            try:
+                with open(secrets_path, "r") as f:
+                    for line in f:
+                        if line.strip().startswith("mongo_uri"):
+                            parts = line.split("=", 1)
+                            if len(parts) == 2:
+                                uri = parts[1].strip().strip('"').strip("'")
+                                break
+            except:
+                pass
+    if uri and "YOUR_PASSWORD_HERE" not in uri:
+        try:
+            return pymongo.MongoClient(uri, serverSelectionTimeoutMS=2000)
+        except:
+            pass
+    return None
+
+# In-memory config cache — loaded once per process, reused by all parallel threads
+_CONFIG_CACHE: dict = {}
+
+def load_scraper_config(config_name):
+    """
+    Dynamically loads configuration from MongoDB or a local JSON file.
+    Results are cached in memory after first load to avoid repeated DB hits
+    when called from parallel scraper threads.
+    """
+    if config_name in _CONFIG_CACHE:
+        return _CONFIG_CACHE[config_name]
+
+    result = None
+    client = _get_db_client()
+    if client:
+        try:
+            db = client["ai_discovery"]
+            col = db["configs"]
+            doc = col.find_one({"_id": config_name})
+            if doc and "data" in doc:
+                result = doc["data"]
+        except Exception as e:
+            print(f"MongoDB config load error for {config_name}: {e}")
+        finally:
+            client.close()
+
+    if result is None:
+        # Fallback to local JSON file
+        filename = os.path.join(BASE_DIR, f"{config_name}.json")
+        if os.path.exists(filename):
+            try:
+                with open(filename, "r") as f:
+                    result = json.load(f)
+            except Exception as e:
+                print(f"JSON config load error for {filename}: {e}")
+
+    if result is None:
+        print(f"Warning: Configuration {config_name} not found in MongoDB or local file.")
+
+    _CONFIG_CACHE[config_name] = result
+    return result
+
+
+
+# ----------------------------------------------------
+# 🔌 API Fetching Methods
+# ----------------------------------------------------
+
+# 1. Fetch Trending GitHub AI Repos
+def get_github_ai_updates():
+    url = "https://api.github.com/search/repositories?q=topic:artificial-intelligence&sort=updated&order=desc"
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+    repos = []
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            for item in data.get('items', []):
+                repos.append({
+                    "Type": "GitHub Repo",
+                    "Title": item.get('name', 'Unknown'),
+                    "Description": item.get('description') or "No description provided.",
+                    "Link": item.get('html_url', 'https://github.com')
+                })
+    except Exception as e:
+        print(f"Error fetching GitHub: {e}")
+    return repos
+
+# 2. Fetch Trending Hugging Face Models
+def get_huggingface_updates():
+    url = "https://huggingface.co/api/models?sort=lastModified&direction=-1&limit=50"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    models = []
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            for item in data:
+                model_id = item.get('id', '')
+                if model_id and ('llama' in model_id.lower() or 'ai' in model_id.lower() or 'mistral' in model_id.lower()):
+                    models.append({
+                        "Type": "Hugging Face Model",
+                        "Title": model_id,
+                        "Description": f"Author: {item.get('author', 'Unknown')} | Downloads: {item.get('downloads', 0)} | Likes: {item.get('likes', 0)}",
+                        "Link": f"https://huggingface.co/{model_id}"
+                    })
+    except Exception as e:
+        print(f"Error fetching Hugging Face: {e}")
+    return models
+
+# 3. Fetch arXiv Research Papers
+def get_arxiv_updates():
+    url = "https://export.arxiv.org/api/query?search_query=cat:cs.AI&sortBy=submittedDate&sortOrder=descending&max_results=15"
+    papers = []
+    try:
+        feed = feedparser.parse(url)
+        for entry in feed.entries:
+            papers.append({
+                "Type": "arXiv Research Paper",
+                "Title": entry.get('title', 'No Title').replace('\n', ' ').strip(),
+                "Description": entry.get('summary', 'No abstract available.').replace('\n', ' ').strip()[:300] + "...",
+                "Link": entry.get('link', '#')
+            })
+    except Exception as e:
+        print(f"Error fetching arXiv: {e}")
+    return papers
+
+# 4. Fetch PyPI Package Releases
+def get_pypi_updates():
+    url = "https://pypi.org/rss/updates.xml"
+    packages = []
+    try:
+        feed = feedparser.parse(url)
+        keywords = load_scraper_config("pypi_keywords") or []
+        for entry in feed.entries:
+            title = entry.get('title', '')
+            desc = entry.get('summary', '')
+            if any(k in title.lower() or k in desc.lower() for k in keywords):
+                packages.append({
+                    "Type": "PyPI Release",
+                    "Title": title,
+                    "Description": desc[:200] + "..." if desc else "New package release on PyPI.",
+                    "Link": entry.get('link', 'https://pypi.org')
+                })
+        if not packages and feed.entries:
+            for entry in feed.entries[:5]:
+                packages.append({
+                    "Type": "PyPI Release",
+                    "Title": entry.get('title', 'Unknown Package'),
+                    "Description": entry.get('summary', '')[:200] + "...",
+                    "Link": entry.get('link', 'https://pypi.org')
+                })
+    except Exception as e:
+        print(f"Error fetching PyPI: {e}")
+    return packages
+
+# 5. Fetch AI Blog and Research RSS Feeds (parallel per feed)
+def get_blog_updates():
+    feeds = load_scraper_config("blog_feeds") or []
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+    def _fetch_feed(url):
+        articles = []
+        try:
+            response = requests.get(url, headers=headers, timeout=8)
+            if response.status_code == 200:
+                feed = feedparser.parse(response.content)
+                source_name = url.split('/')[2].replace('www.', '')
+                for entry in feed.entries[:5]:
+                    articles.append({
+                        "Type": "Corporate Blog",
+                        "Title": f"[{source_name.upper()}] {entry.get('title', 'No Title')}",
+                        "Description": entry.get('summary', 'Click link to read')[:250] + "...",
+                        "Link": entry.get('link', '#')
+                    })
+        except:
+            pass
+        return articles
+
+    import concurrent.futures
+    all_articles = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(feeds), 16)) as ex:
+        results = ex.map(_fetch_feed, feeds)
+    for batch in results:
+        all_articles.extend(batch)
+    return all_articles
+
+
+# 6. Fetch Reddit AI Discussions
+def get_reddit_updates():
+    url = "https://www.reddit.com/r/MachineLearning/.rss"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 AI-Discovery-Hub/1.0"
+    }
+    posts = []
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            feed = feedparser.parse(response.content)
+            for entry in feed.entries[:15]:
+                posts.append({
+                    "Type": "Reddit Discussion",
+                    "Title": entry.get('title', 'No Title'),
+                    "Description": f"Author: {entry.get('author', 'Unknown')}",
+                    "Link": entry.get('link', 'https://reddit.com')
+                })
+    except Exception as e:
+        print(f"Error fetching Reddit: {e}")
+    return posts
+
+# 7. Fetch Product Hunt AI Launches
+def get_producthunt_updates():
+    url = "https://www.producthunt.com/feed"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    launches = []
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            feed = feedparser.parse(response.content)
+            keywords = load_scraper_config("ph_keywords") or []
+            for entry in feed.entries:
+                title = entry.get('title', '')
+                desc = entry.get('summary', '') or "New product launch on Product Hunt."
+                if any(k in title.lower() or k in desc.lower() for k in keywords):
+                    launches.append({
+                        "Type": "Product Hunt Launch",
+                        "Title": title,
+                        "Description": desc[:250] + "...",
+                        "Link": entry.get('link', 'https://producthunt.com')
+                    })
+    except Exception as e:
+        print(f"Error fetching Product Hunt: {e}")
+    return launches
+
+# 8. Fetch AI Courses
+def get_course_updates():
+    url = "https://www.classcentral.com/report/feed/"
+    courses = []
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            feed = feedparser.parse(response.content)
+            keywords = load_scraper_config("course_keywords") or []
+            for entry in feed.entries:
+                title = entry.get('title', '')
+                desc = entry.get('summary', '') or "Educational resources and course news."
+                if any(k in title.lower() or k in desc.lower() for k in keywords):
+                    courses.append({
+                        "Type": "AI Course",
+                        "Title": title,
+                        "Description": desc[:250] + "...",
+                        "Link": entry.get('link', '#')
+                    })
+    except:
+        pass
+    return courses
+
+# 9. Fetch YouTube AI Videos dynamically via global search query (parallel per query)
+def get_youtube_updates():
+    queries = load_scraper_config("youtube_search_queries") or []
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    import urllib.parse
+
+    def _fetch_query(q):
+        results = []
+        encoded_query = urllib.parse.quote_plus(q)
+        url = f"https://www.youtube.com/results?search_query={encoded_query}&sp=CAI%253D"
+        try:
+            response = requests.get(url, headers=headers, timeout=8)
+            if response.status_code == 200:
+                matches = re.findall(r"var ytInitialData = ({.*?});</script>", response.text)
+                if not matches:
+                    matches = re.findall(r"window\[\"ytInitialData\"\] = ({.*?});</script>", response.text)
+                if matches:
+                    data = json.loads(matches[0])
+                    section_list = data.get("contents", {}).get("twoColumnSearchResultsRenderer", {}).get("primaryContents", {}).get("sectionListRenderer", {})
+                    count = 0
+                    for section in section_list.get("contents", []):
+                        item_section = section.get("itemSectionRenderer", {})
+                        for item in item_section.get("contents", []):
+                            video_renderer = item.get("videoRenderer", {})
+                            lockup_model = item.get("lockupViewModel", {})
+                            v_title = v_id = ""
+                            v_channel = "YouTube"
+                            v_desc = "Watch latest video on YouTube."
+                            if video_renderer:
+                                v_title = video_renderer.get("title", {}).get("runs", [{}])[0].get("text", "")
+                                v_id = video_renderer.get("videoId", "")
+                                owner_runs = video_renderer.get("ownerText", {}).get("runs", [])
+                                if owner_runs:
+                                    v_channel = owner_runs[0].get("text", "YouTube")
+                                desc_runs = video_renderer.get("detailedMetadataSnippets", [{}])[0].get("snippetText", {}).get("runs", [])
+                                if desc_runs:
+                                    v_desc = desc_runs[0].get("text", "Watch video on YouTube.")
+                                else:
+                                    desc_runs_fb = video_renderer.get("descriptionSnippet", {}).get("runs", [])
+                                    if desc_runs_fb:
+                                        v_desc = desc_runs_fb[0].get("text", "Watch video on YouTube.")
+                            elif lockup_model:
+                                v_title = lockup_model.get("metadata", {}).get("lockupMetadataViewModel", {}).get("title", {}).get("content", "")
+                                v_id = lockup_model.get("contentId", "")
+                                v_channel = lockup_model.get("shortBylineText", {}).get("runs", [{}])[0].get("text", "YouTube")
+                            if v_title and v_id:
+                                results.append({
+                                    "Type": "YouTube Video",
+                                    "Title": f"[{v_channel.upper()}] {v_title}",
+                                    "Description": v_desc[:250] + "..." if len(v_desc) > 250 else v_desc,
+                                    "Link": f"https://www.youtube.com/watch?v={v_id}"
+                                })
+                                count += 1
+                                if count >= 5:
+                                    break
+                        if count >= 5:
+                            break
+        except Exception as e:
+            print(f"Error searching YouTube for {q}: {e}")
+        return results
+
+    import concurrent.futures
+    videos = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(queries), 8)) as ex:
+        for batch in ex.map(_fetch_query, queries):
+            videos.extend(batch)
+    return videos
+
+# ----------------------------------------------------
+# 🔍 Direct Link Metadata Enricher (Crawls actual page title/meta description)
+# ----------------------------------------------------
+def enrich_item_metadata(item):
+    """
+    Fetches only the first 24KB of the target page (enough to get all <head> meta tags)
+    instead of downloading the full HTML — much faster for pages that can be 500KB+.
+    """
+    url = item.get("Link", "")
+    if not url or url == "#" or "youtube.com" in url:
+        item["PageTitle"] = item.get("Title")
+        item["PageDescription"] = item.get("Description")
+        item["PageImage"] = ""
+        item["PageOutline"] = []
+        return item
+
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/html",
+            "Accept-Encoding": "gzip, deflate",
+        }
+        # Stream=True + read only first 100KB — some sites place meta tags deep in <head>
+        with requests.get(url, headers=headers, timeout=5, stream=True) as resp:
+            if resp.status_code != 200:
+                raise ValueError(f"HTTP {resp.status_code}")
+            raw_bytes = b""
+            for chunk in resp.iter_content(chunk_size=8192):
+                raw_bytes += chunk
+                if len(raw_bytes) >= 102400:  # 100KB is enough for modern <head>
+                    break
+        html = raw_bytes.decode("utf-8", errors="ignore")
+
+        # 1. Title
+        title_match = re.search(r"<title>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+        p_title = re.sub(r"\s+", " ", title_match.group(1).strip()) if title_match else ""
+
+        # 2. Meta Description (name or og:description)
+        p_desc = ""
+        for pat in [
+            r'<meta[^>]*name=["\']description["\'][^>]*content=["\'](.*?)["\']',
+            r'<meta[^>]*content=["\'](.*?)["\'][^>]*name=["\']description["\']',
+            r'<meta[^>]*property=["\']og:description["\'][^>]*content=["\'](.*?)["\']',
+            r'<meta[^>]*content=["\'](.*?)["\'][^>]*property=["\']og:description["\']',
+        ]:
+            m = re.search(pat, html, re.IGNORECASE | re.DOTALL)
+            if m:
+                p_desc = re.sub(r"\s+", " ", m.group(1).strip())
+                break
+        if p_desc and len(p_desc) > 250:
+            p_desc = p_desc[:250] + "..."
+
+        # 3. og:image / twitter:image — trust the URL, let browser onerror handle broken ones
+        p_img = ""
+        for pat in [
+            r'<meta[^>]*property=["\']og:image["\'][^>]*content=["\'](.*?)["\']',
+            r'<meta[^>]*content=["\'](.*?)["\'][^>]*property=["\']og:image["\']',
+            r'<meta[^>]*name=["\']twitter:image["\'][^>]*content=["\'](.*?)["\']',
+            r'<meta[^>]*content=["\'](.*?)["\'][^>]*name=["\']twitter:image["\']',
+        ]:
+            m = re.search(pat, html, re.IGNORECASE | re.DOTALL)
+            if m:
+                p_img = m.group(1).strip()
+                if p_img.startswith("/") and not p_img.startswith("//"):
+                    import urllib.parse
+                    parsed_url = urllib.parse.urlparse(url)
+                    p_img = f"{parsed_url.scheme}://{parsed_url.netloc}{p_img}"
+                break
+
+        # 4. Headings for chip tags (from partial HTML, best-effort)
+        headings = []
+        for h_type in ["h1", "h2", "h3"]:
+            for h_text in re.findall(rf"<{h_type}[^>]*>(.*?)</{h_type}>", html, re.IGNORECASE | re.DOTALL):
+                h_clean = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", h_text).strip())
+                if h_clean and 5 < len(h_clean) < 70 and h_clean not in headings:
+                    headings.append(h_clean)
+                    if len(headings) >= 3:
+                        break
+            if len(headings) >= 3:
+                break
+
+        item["PageTitle"] = p_title or item.get("Title")
+        item["PageDescription"] = p_desc or item.get("Description")
+        item["PageImage"] = p_img
+        item["PageOutline"] = headings
+        return item
+
+    except Exception:
+        pass
+
+    item["PageTitle"] = item.get("Title")
+    item["PageDescription"] = item.get("Description")
+    item["PageImage"] = ""
+    item["PageOutline"] = []
+    return item
+
+def enrich_updates_in_parallel(updates_list):
+    """
+    Crawls target links in parallel to enrich the items with actual page titles and summaries.
+    Uses 24 workers for maximum throughput.
+    """
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
+        enriched = list(executor.map(enrich_item_metadata, updates_list))
+    return enriched
+
+
+# ----------------------------------------------------
+# 🔑 MongoDB Helpers
+# ----------------------------------------------------
+def get_mongo_client(uri):
+    try:
+        client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=5000)
+        client.admin.command('ping')
+        return client
+    except Exception as e:
+        print(f"MongoDB connection check failed: {e}")
+        return None
+
+def save_updates_to_mongo(client, updates_list):
+    if not client:
+        return 0
+    db = client["ai_discovery"]
+    collection = db["updates"]
+    
+    new_count = 0
+    for item in updates_list:
+        doc = {
+            "_id": item["Link"],
+            "type": item["Type"],
+            "title": item["Title"],
+            "description": item["Description"],
+            "page_title": item.get("PageTitle", item["Title"]),
+            "page_description": item.get("PageDescription", item["Description"]),
+            "page_image": item.get("PageImage", ""),
+            "page_outline": item.get("PageOutline", []),
+            "fetched_at": pd.Timestamp.now().isoformat()
+        }
+        try:
+            result = collection.replace_one({"_id": item["Link"]}, doc, upsert=True)
+            if result.upserted_id is not None:
+                new_count += 1
+        except Exception as e:
+            print(f"Error upserting document: {e}")
+            pass
+    return new_count
+
+def get_persisted_updates_from_mongo(client, update_type):
+    if not client:
+        return []
+    db = client["ai_discovery"]
+    collection = db["updates"]
+    
+    results = []
+    try:
+        # Load ALL records for this type, sorted alphabetically by title
+        cursor = collection.find(
+            {"type": update_type}
+        ).sort("title", 1).limit(500)  # 500 per category max
+        
+        for doc in cursor:
+            results.append({
+                "Type": doc["type"],
+                "Title": doc["title"],
+                "Description": doc["description"],
+                "PageTitle": doc.get("page_title", doc["title"]),
+                "PageDescription": doc.get("page_description", doc["description"]),
+                "PageImage": doc.get("page_image", ""),
+                "PageOutline": doc.get("page_outline", []),
+                "Link": doc["_id"]
+            })
+    except Exception as e:
+        print(f"Error loading persisted data for {update_type}: {e}")
+    return results
+
+def get_db_stats(client):
+    if not client:
+        return {}
+    db = client["ai_discovery"]
+    collection = db["updates"]
+    stats = {}
+    try:
+        pipeline = [
+            {"$group": {"_id": "$type", "count": {"$sum": 1}}}
+        ]
+        groups = collection.aggregate(pipeline)
+        for g in groups:
+            stats[g["_id"]] = g["count"]
+    except Exception as e:
+        print(f"Error gathering stats: {e}")
+    return stats
+
+def clear_mongo_db(client):
+    if not client:
+        return False
+    try:
+        db = client["ai_discovery"]
+        db["updates"].drop()
+        return True
+    except Exception as e:
+        print(f"Error dropping database collection: {e}")
+        return False

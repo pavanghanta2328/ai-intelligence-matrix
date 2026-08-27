@@ -1,0 +1,11 @@
+[
+    "https://openai.com/news/rss.xml",
+    "https://huggingface.co/blog/feed.xml",
+    "https://deepmind.google/blog/rss.xml",
+    "https://research.google/blog/rss.xml",
+    "https://blogs.nvidia.com/blog/category/deep-learning/feed/",
+    "https://aws.amazon.com/blogs/machine-learning/feed/",
+    "https://pytorch.org/feed.xml",
+    "https://bair.berkeley.edu/feed.xml",
+    "https://simonwillison.net/atom/entries/"
+]

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Enterprise AI Discovery Hub",
+  "version": "1.0.0",
+  "description": "Scans and tracks the newest AI releases, models, research papers, packages, and discussions.",
+  "permissions": [],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Enterprise AI Discovery Hub"
+  }
+}

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🤖</div>
+    <div class="title-container">
+      <h1>AI Discovery Hub</h1>
+      <p class="subtitle">Real-time Enterprise Scans</p>
+    </div>
+    <button id="sync-btn" title="Sync Latest AI Updates">🔄</button>
+  </div>
+
+  <!-- Executive Search Bar -->
+  <div class="search-container">
+    <input type="text" id="search-input" placeholder="🔍 Search LLM, Agent, Vision, Paper..." />
+  </div>
+
+  <!-- Scrollable Tab Navigation -->
+  <div class="tabs-container">
+    <div class="tabs">
+      <button class="tab-btn active" data-category="GitHub Repo">💻 GitHub</button>
+      <button class="tab-btn" data-category="Hugging Face Model">🤗 HF Models</button>
+      <button class="tab-btn" data-category="arXiv Research Paper">🔬 arXiv</button>
+      <button class="tab-btn" data-category="PyPI Release">📦 PyPI</button>
+      <button class="tab-btn" data-category="Corporate Blog">📰 Blogs</button>
+      <button class="tab-btn" data-category="Reddit Discussion">💬 Reddit</button>
+      <button class="tab-btn" data-category="Product Hunt Launch">🚀 ProdHunt</button>
+      <button class="tab-btn" data-category="AI Course">🎓 Courses</button>
+      <button class="tab-btn" data-category="YouTube Video">📺 Videos</button>
+    </div>
+  </div>
+
+  <!-- Content Area -->
+  <div class="content-scroll">
+    <div id="loading" class="info-msg">Loading updates from cloud...</div>
+    <div id="error" class="info-msg error-msg" style="display: none;"></div>
+    <div id="no-data" class="info-msg" style="display: none;">No updates found. Please trigger a fetch in the admin dashboard.</div>
+    <div id="updates-list"></div>
+  </div>
+
+  <!-- Mini Pagination Bar -->
+  <div id="pagination-bar" class="pagination-bar" style="display: none;">
+    <button id="prev-page-btn" class="page-btn">◀ Prev</button>
+    <span id="page-indicator">Page 1 of 1</span>
+    <button id="next-page-btn" class="page-btn">Next ▶</button>
+  </div>
+
+  <div class="footer">
+    <span id="record-count">0 items loaded</span>
+    <span class="dot">•</span>
+    <a href="http://localhost:8501" target="_blank" class="dashboard-link">Open Dashboard</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "description": "Canonical job role -> all known aliases/synonyms. Used for designation matching in ATS scoring. Same structure as skill_synonyms.json.",
+    "sources": [
+      "LinkedIn Job Titles Taxonomy",
+      "Indeed Job Categories",
+      "Stack Overflow Developer Survey 2023-2024",
+      "ESCO Occupations Framework",
+      "Lightcast/EMSI Job Titles Open Data"
+    ]
+  },
+
+  "software_engineering": {
+    "software engineer": ["software engineer", "swe", "software developer", "software development engineer", "sde", "application developer", "application engineer", "application programmer", "programmer", "coder", "software craftsman", "software craftsperson"],
+    "senior software engineer": ["senior software engineer", "sr software engineer", "sr. software engineer", "senior developer", "sr developer", "sr. developer", "senior sde", "sde ii", "sde 2", "software engineer ii", "software engineer 2", "senior programmer", "senior application developer"],
+    "staff engineer": ["staff engineer", "staff software engineer", "sde iii", "sde 3", "software engineer iii", "software engineer 3", "principal software engineer", "principal engineer", "principal developer", "distinguished engineer"],
+    "junior software engineer": ["junior software engineer", "jr software engineer", "jr. software engineer", "junior developer", "jr developer", "associate software engineer", "associate developer", "entry level developer", "software engineer i", "sde i", "sde 1"],
+    "full stack engineer": ["full stack engineer", "full-stack engineer", "fullstack engineer", "full stack developer", "full-stack developer", "fullstack developer", "full stack web developer", "full-stack web developer", "end to end developer", "end-to-end developer", "mean stack developer", "mern stack developer", "lamp stack developer"],
+    "backend engineer": ["backend engineer", "back-end engineer", "back end engineer", "backend developer", "back-end developer", "back end developer", "server side developer", "server-side developer", "api developer", "api engineer", "services engineer"],
+    "frontend engineer": ["frontend engineer", "front-end engineer", "front end engineer", "frontend developer", "front-end developer", "front end developer", "ui developer", "ui engineer", "client side developer", "client-side developer", "web developer", "web engineer"],
+    "mobile engineer": ["mobile engineer", "mobile developer", "mobile app developer", "mobile application developer", "app developer", "ios developer", "ios engineer", "android developer", "android engineer", "react native developer", "flutter developer", "cross platform developer"],
+    "devops engineer": ["devops engineer", "dev ops engineer", "devops developer", "site reliability engineer", "sre", "platform engineer", "infrastructure engineer", "cloud engineer", "cloud developer", "devsecops engineer", "build engineer", "release engineer", "ci/cd engineer", "systems reliability engineer"],
+    "data engineer": ["data engineer", "data pipeline engineer", "etl developer", "etl engineer", "data infrastructure engineer", "big data engineer", "data platform engineer", "analytics engineer", "data integration engineer"],
+    "machine learning engineer": ["machine learning engineer", "ml engineer", "ai engineer", "artificial intelligence engineer", "applied scientist", "research engineer", "deep learning engineer", "nlp engineer", "computer vision engineer", "ml developer", "ai/ml engineer"],
+    "data scientist": ["data scientist", "senior data scientist", "lead data scientist", "applied data scientist", "research scientist", "machine learning scientist", "ai scientist", "quantitative analyst", "quant analyst", "computational scientist"],
+    "data analyst": ["data analyst", "business intelligence analyst", "bi analyst", "analytics analyst", "reporting analyst", "insights analyst", "data insights analyst", "operations analyst", "business analyst", "product analyst"],
+    "security engineer": ["security engineer", "cybersecurity engineer", "information security engineer", "infosec engineer", "application security engineer", "appsec engineer", "network security engineer", "cloud security engineer", "devsecops engineer", "penetration tester", "pen tester", "security developer"],
+    "embedded engineer": ["embedded engineer", "embedded software engineer", "embedded developer", "firmware engineer", "firmware developer", "rtos engineer", "systems programmer", "low level engineer", "embedded systems engineer"],
+    "qa engineer": ["qa engineer", "quality assurance engineer", "test engineer", "software tester", "automation engineer", "test automation engineer", "sdet", "software development engineer in test", "quality engineer", "testing engineer", "manual tester", "qa developer"],
+    "database administrator": ["database administrator", "dba", "database engineer", "database developer", "sql developer", "sql engineer", "database architect", "data architect", "nosql engineer", "mongodb developer", "postgresql developer"]
+  },
+
+  "architecture_and_leadership": {
+    "software architect": ["software architect", "solution architect", "solutions architect", "enterprise architect", "technical architect", "application architect", "cloud architect", "systems architect", "it architect", "chief architect"],
+    "tech lead": ["tech lead", "technical lead", "team lead", "engineering lead", "lead engineer", "lead developer", "lead software engineer", "senior lead", "development lead", "module lead", "project lead"],
+    "engineering manager": ["engineering manager", "software engineering manager", "development manager", "it manager", "technology manager", "r&d manager", "product engineering manager", "team manager"],
+    "principal engineer": ["principal engineer", "principal developer", "principal software engineer", "staff engineer", "distinguished engineer", "fellow engineer", "chief engineer"],
+    "vp engineering": ["vp engineering", "vice president engineering", "vp of engineering", "head of engineering", "director of engineering", "engineering director", "cto", "chief technology officer", "chief software officer"]
+  },
+
+  "product_and_management": {
+    "product manager": ["product manager", "pm", "senior product manager", "associate product manager", "apm", "technical product manager", "tpm", "product owner", "po", "program manager", "group product manager", "gpm"],
+    "project manager": ["project manager", "it project manager", "technical project manager", "delivery manager", "scrum master", "agile coach", "release manager", "program manager"],
+    "product designer": ["product designer", "ux designer", "user experience designer", "ui/ux designer", "ux/ui designer", "interaction designer", "visual designer", "ui designer", "user interface designer", "experience designer", "digital designer", "design lead"]
+  },
+
+  "cloud_and_infrastructure": {
+    "cloud engineer": ["cloud engineer", "cloud developer", "cloud architect", "aws engineer", "azure engineer", "gcp engineer", "google cloud engineer", "cloud infrastructure engineer", "cloud platform engineer", "cloud solutions engineer", "cloud operations engineer"],
+    "systems administrator": ["systems administrator", "sysadmin", "system administrator", "linux administrator", "windows administrator", "it administrator", "infrastructure administrator", "network administrator", "server administrator"],
+    "network engineer": ["network engineer", "network administrator", "network architect", "network developer", "lan/wan engineer", "cisco engineer", "network operations engineer", "network security engineer", "telecom engineer", "noc engineer"],
+    "database administrator": ["database administrator", "dba", "oracle dba", "sql server dba", "mysql dba", "postgresql dba", "database engineer", "database developer", "data engineer", "nosql administrator"]
+  },
+
+  "data_and_analytics": {
+    "data scientist": ["data scientist", "senior data scientist", "applied data scientist", "research scientist", "ml scientist", "ai researcher", "computational data scientist", "statistician", "quantitative researcher"],
+    "data analyst": ["data analyst", "senior data analyst", "business analyst", "bi analyst", "business intelligence analyst", "reporting analyst", "insights analyst", "analytics analyst", "data insights analyst", "data reporting analyst", "operations analyst"],
+    "data engineer": ["data engineer", "senior data engineer", "big data engineer", "etl developer", "etl engineer", "data pipeline engineer", "analytics engineer", "data platform engineer", "data infrastructure engineer", "data integration engineer", "spark developer", "hadoop developer"],
+    "business intelligence developer": ["business intelligence developer", "bi developer", "bi engineer", "tableau developer", "power bi developer", "looker developer", "qlik developer", "data visualization developer", "reporting developer", "analytics developer"]
+  },
+
+  "sap_and_erp": {
+    "sap consultant": ["sap consultant", "sap functional consultant", "sap technical consultant", "sap developer", "sap abap developer", "sap basis administrator", "sap basis consultant", "sap analyst", "sap project manager", "sap solution architect", "erp consultant", "erp developer", "erp analyst", "oracle consultant", "oracle developer", "workday consultant", "servicenow developer", "servicenow consultant", "servicenow architect"],
+    "sap mm consultant": ["sap mm consultant", "sap materials management consultant", "sap mm functional consultant", "sap scm consultant", "sap pp consultant", "sap wm consultant"],
+    "sap sd consultant": ["sap sd consultant", "sap sales distribution consultant", "sap crm consultant", "sap order management consultant"],
+    "sap fi consultant": ["sap fi consultant", "sap fi/co consultant", "sap financial consultant", "sap finance consultant", "sap fico consultant", "sap controlling consultant"]
+  },
+
+  "testing_and_qa": {
+    "test engineer": ["test engineer", "qa engineer", "quality assurance engineer", "quality engineer", "software tester", "sdet", "software development engineer in test", "automation test engineer", "manual test engineer", "performance test engineer", "qa analyst", "quality analyst", "testing engineer", "test analyst", "test lead", "qa lead", "senior test engineer", "sr test engineer"],
+    "automation engineer": ["automation engineer", "test automation engineer", "automation developer", "qa automation engineer", "selenium engineer", "cypress engineer", "automation framework developer", "rpa developer", "robotic process automation developer"]
+  },
+
+  "design_and_creative": {
+    "ux designer": ["ux designer", "user experience designer", "ui/ux designer", "ux/ui designer", "interaction designer", "product designer", "experience designer", "ux researcher", "user researcher", "usability engineer"],
+    "graphic designer": ["graphic designer", "visual designer", "brand designer", "creative designer", "digital designer", "print designer", "illustration designer", "art director", "creative director"],
+    "ui designer": ["ui designer", "user interface designer", "web designer", "interface designer", "visual ui designer", "frontend designer"]
+  },
+
+  "marketing_and_content": {
+    "digital marketer": ["digital marketer", "digital marketing executive", "digital marketing specialist", "digital marketing manager", "online marketing specialist", "internet marketer", "performance marketer", "growth marketer"],
+    "seo specialist": ["seo specialist", "seo analyst", "seo executive", "search engine optimization specialist", "seo manager", "seo expert", "sem specialist", "search marketing specialist", "seo strategist", "organic growth specialist"],
+    "content writer": ["content writer", "copywriter", "content strategist", "content marketer", "technical writer", "content creator", "blog writer", "ux writer", "documentation writer", "proposal writer", "content specialist"],
+    "social media manager": ["social media manager", "social media specialist", "social media executive", "community manager", "social media coordinator", "social media analyst", "brand social media manager"]
+  },
+
+  "finance_and_accounting": {
+    "accountant": ["accountant", "senior accountant", "accounts executive", "finance executive", "financial accountant", "chartered accountant", "ca", "certified public accountant", "cpa", "cost accountant", "tax accountant", "management accountant", "assistant accountant"],
+    "financial analyst": ["financial analyst", "finance analyst", "senior financial analyst", "investment analyst", "equity analyst", "credit analyst", "risk analyst", "treasury analyst", "fp&a analyst", "financial planning analyst", "business financial analyst"],
+    "auditor": ["auditor", "internal auditor", "external auditor", "it auditor", "compliance auditor", "risk auditor", "forensic auditor", "statutory auditor"]
+  },
+
+  "sales_and_business_development": {
+    "sales executive": ["sales executive", "business development executive", "sales representative", "sales rep", "account executive", "ae", "inside sales representative", "sales development representative", "sdr", "business development representative", "bdr"],
+    "account manager": ["account manager", "client success manager", "customer success manager", "csm", "key account manager", "strategic account manager", "relationship manager", "client relationship manager"],
+    "sales manager": ["sales manager", "business development manager", "bdm", "regional sales manager", "territory sales manager", "sales director", "head of sales", "vp sales"]
+  },
+
+  "hr_and_recruitment": {
+    "recruiter": ["recruiter", "talent acquisition specialist", "technical recruiter", "it recruiter", "hr recruiter", "staffing specialist", "recruitment consultant", "talent scout", "headhunter", "sourcer", "bench sales recruiter", "us recruiter", "it staffing"],
+    "hr manager": ["hr manager", "human resources manager", "people manager", "hr business partner", "hrbp", "hr generalist", "hr executive", "people operations manager", "talent manager"],
+    "hr executive": ["hr executive", "hr coordinator", "hr assistant", "hr associate", "human resources executive", "hr operations executive", "people operations executive"]
+  }
+}
