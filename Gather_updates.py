@@ -337,8 +337,15 @@ st.markdown(
 # ----------------------------------------------------
 st.sidebar.markdown("## ⌘ Intelligence Core")
 
+import os
 # Auto-detect URI in background silently
-mongo_uri = st.secrets.get("mongo_uri")
+mongo_uri = os.environ.get("mongo_uri")
+if not mongo_uri:
+    try:
+        mongo_uri = st.secrets.get("mongo_uri")
+    except Exception:
+        mongo_uri = None
+
 client = None
 if mongo_uri and "YOUR_PASSWORD_HERE" not in mongo_uri:
     client = get_mongo_client(mongo_uri)
@@ -352,7 +359,7 @@ else:
 st.sidebar.markdown("---")
 
 # Main Call-to-Action Button for Executives
-fetch_btn = st.sidebar.button("⚡ Initiate Global Sweep", use_container_width=True, type="primary")
+fetch_btn = st.sidebar.button("⚡ Initiate Global Sweep", width="stretch", type="primary")
 
 st.sidebar.markdown("---")
 
@@ -364,7 +371,7 @@ with st.sidebar.expander("⚙️ System Configuration", expanded=False):
         st.markdown(f"**Cloud Status**: Connected (Atlas)")
         st.markdown(f"**Indexed Records**: `{total_records}` total")
         st.markdown("---")
-        if st.button("🗑️ Clear Indexed History", use_container_width=True):
+        if st.button("🗑️ Clear Indexed History", width="stretch"):
             if clear_mongo_db(client):
                 st.success("Database history cleared!")
                 st.rerun()
@@ -606,7 +613,7 @@ else:
                 tooltip=['Category', 'Resources']
             ).properties(height=380)
             
-            st.altair_chart(chart, use_container_width=True)
+            st.altair_chart(chart, width="stretch")
 
         st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
@@ -645,7 +652,7 @@ else:
                     data=csv_data,
                     file_name="executive_ai_intelligence_report.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    width="stretch"
                 )
 
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
