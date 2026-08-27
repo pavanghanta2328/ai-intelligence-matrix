@@ -335,7 +335,7 @@ st.markdown(
 # ----------------------------------------------------
 # 🔐 Executive Sidebar & Radar Controls
 # ----------------------------------------------------
-st.sidebar.markdown("## 🎯 Executive Radar Controls")
+st.sidebar.markdown("## ⌘ Intelligence Core")
 
 # Auto-detect URI in background silently
 mongo_uri = st.secrets.get("mongo_uri")
@@ -345,26 +345,26 @@ if mongo_uri and "YOUR_PASSWORD_HERE" not in mongo_uri:
 
 # Executive Stream Status Badge
 if client:
-    st.sidebar.success("🟢 Live Intelligence Radar (Cloud Synced)")
+    st.sidebar.success("🟢 Live Cloud Sync Active")
 else:
-    st.sidebar.info("🟠 Live Scraper Mode (Direct Stream)")
+    st.sidebar.info("🟠 Direct Stream Mode")
 
 st.sidebar.markdown("---")
 
 # Main Call-to-Action Button for Executives
-fetch_btn = st.sidebar.button("🔄 Run Instant Intelligence Scan", use_container_width=True, type="primary")
+fetch_btn = st.sidebar.button("⚡ Initiate Global Sweep", use_container_width=True, type="primary")
 
 st.sidebar.markdown("---")
 
 # Collapsed Developer / Database Management Console at the bottom
-with st.sidebar.expander("⚙️ System & Database Settings", expanded=False):
+with st.sidebar.expander("⚙️ System Configuration", expanded=False):
     if client:
         stats = get_db_stats(client)
         total_records = sum(stats.values())
-        st.markdown(f"**Cloud Status**: Connected (MongoDB Atlas)")
-        st.markdown(f"**Cloud Records (All Scans)**: `{total_records}` total")
+        st.markdown(f"**Cloud Status**: Connected (Atlas)")
+        st.markdown(f"**Indexed Records**: `{total_records}` total")
         st.markdown("---")
-        if st.button("🗑️ Clear Saved History", use_container_width=True):
+        if st.button("🗑️ Clear Indexed History", use_container_width=True):
             if clear_mongo_db(client):
                 st.success("Database history cleared!")
                 st.rerun()
@@ -533,13 +533,13 @@ else:
                 "></div>
                 <div style="position: relative; z-index: 1;">
                     <div style="display: inline-block; padding: 5px 18px; background: linear-gradient(90deg, rgba(251,113,133,0.3), rgba(251,191,36,0.25)); border: 1px solid rgba(251, 191, 36, 0.5); border-radius: 20px; font-size: 0.75rem; font-weight: 700; color: #fcd34d; letter-spacing: 1.5px; margin-bottom: 14px; text-transform: uppercase;">
-                        ⚡ Enterprise AI Radar & Executive Intelligence
+                        ⚡ Autonomous AI Tracking
                     </div>
-                    <h1 style="font-size: 2.6rem; font-weight: 800; background: linear-gradient(90deg, #fda4af, #f97316, #fbbf24, #34d399); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 12px 0; letter-spacing: -0.5px; filter: drop-shadow(0 0 25px rgba(249, 115, 22, 0.5));">
-                        🤖 Executive AI Discovery Hub
+                    <h1 style="font-size: 2.8rem; font-weight: 800; background: linear-gradient(90deg, #ffffff, #e2e8f0); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 12px 0; letter-spacing: -0.5px; filter: drop-shadow(0 0 25px rgba(255, 255, 255, 0.2));">
+                        Intelligence Matrix
                     </h1>
-                    <p style="font-size: 1.05rem; color: #fce7f3; margin: 0; font-weight: 400; max-width: 720px; margin: 0 auto; line-height: 1.6; opacity: 0.9;">
-                        Real-time aggregated strategic insights across GitHub, Hugging Face, arXiv, PyPI, Tech Blogs, Reddit, Product Hunt, Courses, & YouTube
+                    <p style="font-size: 1.1rem; color: #cbd5e1; margin: 0; font-weight: 400; max-width: 600px; margin: 0 auto; line-height: 1.6; opacity: 0.9;">
+                        Monitoring the bleeding edge of global AI development.
                     </p>
                 </div>
             </div>
