@@ -143,22 +143,27 @@ st.markdown(
     html, body, [class*="css"] {
         font-family: 'Outfit', sans-serif;
     }
+
+    /* Hide Streamlit Clutter for a Native App Feel */
+    header[data-testid="stHeader"] { display: none !important; }
+    footer { display: none !important; }
+    #MainMenu { display: none !important; }
     
-    /* Card Container style that adapts perfectly to both Light & Dark themes */
+    /* Card Container style that adapts perfectly to Pristine Light Theme */
     .resource-card {
-        background: var(--secondary-background-color);
-        border: 1px solid rgba(128, 128, 128, 0.2);
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 16px;
-        transition: all 0.25s ease-in-out;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03);
+        background: #ffffff;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 20px;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
     }
     
     .resource-card:hover {
-        transform: translateY(-2px);
-        border-color: var(--primary-color);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+        transform: translateY(-6px);
+        border-color: rgba(79, 70, 229, 0.3);
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
     }
     
     /* Category Left Border Accents */
@@ -199,13 +204,14 @@ st.markdown(
     /* Custom High-Contrast Solid Badges */
     .resource-badge {
         display: inline-block;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.72rem;
+        padding: 6px 14px;
+        border-radius: 24px;
+        font-size: 0.75rem;
         font-weight: 700;
         text-transform: uppercase;
-        margin-bottom: 10px;
-        letter-spacing: 0.5px;
+        margin-bottom: 12px;
+        letter-spacing: 0.8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     
     .badge-github { background: #6e5494; color: #ffffff !important; }
@@ -220,17 +226,17 @@ st.markdown(
 
     /* Theme-Adaptive Executive Metric Cards */
     [data-testid="stMetric"] {
-        background: var(--secondary-background-color) !important;
-        border: 1px solid rgba(128, 128, 128, 0.2) !important;
-        border-radius: 14px !important;
+        background: #ffffff !important;
+        border: 1px solid rgba(0, 0, 0, 0.08) !important;
+        border-radius: 16px !important;
         padding: 16px 20px !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03) !important;
-        transition: all 0.2s ease-in-out !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
     [data-testid="stMetric"]:hover {
-        transform: translateY(-2px) !important;
-        border-color: var(--primary-color) !important;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08) !important;
+        transform: translateY(-4px) !important;
+        border-color: rgba(79, 70, 229, 0.3) !important;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
     }
     [data-testid="stMetricValue"] {
         font-size: 1.4rem !important;
