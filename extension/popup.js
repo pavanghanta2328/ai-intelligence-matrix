@@ -1,5 +1,11 @@
-const API_BASES = ["http://127.0.0.1:8000", "http://localhost:8000", "http://127.0.0.1:8080", "http://localhost:8080"];
-let activeBase = "http://127.0.0.1:8000";
+const API_BASES = [
+  "https://ai-intelligence-matrix.streamlit.app",
+  "http://127.0.0.1:8000",
+  "http://localhost:8000",
+  "http://127.0.0.1:8080",
+  "http://localhost:8080"
+];
+let activeBase = "https://ai-intelligence-matrix.streamlit.app";
 let cachedData = null;
 let currentCategory = "GitHub Repo";
 let searchQuery = "";
@@ -140,10 +146,12 @@ function getShortCategoryIconLabel(cat, count) {
 async function getWorkingApiUrl(endpoint) {
   for (const base of API_BASES) {
     try {
-      const res = await fetch(`${base}/`, { method: "GET", cache: "no-store" });
-      if (res.ok) {
+      const fullUrl = `${base}${endpoint}`;
+      const res = await fetch(fullUrl, { method: "GET", cache: "no-store" });
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json")) {
         activeBase = base;
-        return `${base}${endpoint}`;
+        return fullUrl;
       }
     } catch (e) {
       // Ignore connection error and try next candidate
