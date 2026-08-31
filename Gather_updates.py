@@ -18,6 +18,75 @@ from scrapers import (
 )
 
 
+
+# ----------------------------------------------------
+# 📡 Embed REST API Endpoint directly into Streamlit Web Server
+# ----------------------------------------------------
+def _inject_streamlit_api_route():
+    try:
+        from streamlit.web.server.server import Server
+        import tornado.web
+        import tornado.routing
+        import json
+        import os
+
+        if getattr(Server, "_api_patched", False):
+            return
+        Server._api_patched = True
+
+        orig_create_app = Server._create_app
+
+        def patched_create_app(self):
+            app = orig_create_app(self)
+
+            class ApiUpdatesHandler(tornado.web.RequestHandler):
+                def set_default_headers(self):
+                    self.set_header("Access-Control-Allow-Origin", "*")
+                    self.set_header("Access-Control-Allow-Headers", "*")
+                    self.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                    self.set_header("Content-Type", "application/json")
+
+                def options(self):
+                    self.set_status(204)
+                    self.finish()
+
+                def get(self):
+                    categories = [
+                        "GitHub Repo", "Hugging Face Model", "arXiv Research Paper",
+                        "PyPI Release", "Corporate Blog", "Reddit Discussion",
+                        "Product Hunt Launch", "AI Course", "YouTube Video"
+                    ]
+                    mongo_uri = os.environ.get("mongo_uri")
+                    if not mongo_uri:
+                        try:
+                            import streamlit as st
+                            mongo_uri = st.secrets.get("mongo_uri")
+                        except Exception:
+                            mongo_uri = None
+
+                    resp_data = {}
+                    if mongo_uri and "YOUR_PASSWORD_HERE" not in mongo_uri:
+                        from scrapers import get_mongo_client, get_persisted_updates_from_mongo
+                        c = get_mongo_client(mongo_uri)
+                        if c:
+                            try:
+                                for cat in categories:
+                                    resp_data[cat] = get_persisted_updates_from_mongo(c, cat)
+                            finally:
+                                c.close()
+                    self.write(json.dumps(resp_data))
+
+            rule = tornado.routing.Rule(tornado.routing.PathMatches(r"/api/updates"), ApiUpdatesHandler)
+            app.wildcard_router.rules.insert(0, rule)
+            return app
+
+        Server._create_app = patched_create_app
+    except Exception as e:
+        print(f"API Route Injection Notice: {e}")
+
+_inject_streamlit_api_route()
+
+
 # ----------------------------------------------------
 # 🔍 Rich Pylance Hover Tooltip Helper
 # ----------------------------------------------------
