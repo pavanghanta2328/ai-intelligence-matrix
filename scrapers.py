@@ -538,7 +538,7 @@ def fetch_live_category_fallback(category_name, query=""):
     try:
         for q_str in subqueries:
             if category_name == "GitHub Repo":
-                url = f"https://api.github.com/search/repositories?q={q_str}+sort:stars&per_page=5"
+                url = f"https://api.github.com/search/repositories?q={q_str}&sort=stars&per_page=5"
                 res = requests.get(url, headers=headers, timeout=6)
                 if res.status_code == 200:
                     for item in res.json().get('items', []):
