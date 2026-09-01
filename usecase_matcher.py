@@ -37,7 +37,8 @@ ENGLISH_STOPWORDS = {
     "working", "create", "using", "use", "case", "looking", "find", "provide",
     "list", "recommended", "recommendation", "recommendations", "required",
     "platform", "help", "this", "that", "our", "my", "your", "its", "it",
-    "enterprise", "architecture", "infrastructure", "stack", "best", "top", "new"
+    "enterprise", "architecture", "infrastructure", "stack", "best", "top", "new",
+    "thought", "think", "thinking", "wanted", "trying", "idea", "please", "way", "based"
 }
 
 def load_synonyms():

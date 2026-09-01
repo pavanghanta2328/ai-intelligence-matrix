@@ -493,176 +493,223 @@ def get_prompt_template_updates():
         print(f"Error fetching dynamic prompt templates: {e}")
     return templates
 
-def _clean_fallback_query(query_text):
+def extract_fallback_subqueries(query_text):
     if not query_text:
-        return "ai"
-    from usecase_matcher import ENGLISH_STOPWORDS
-    cleaned = re.sub(r'[^a-zA-Z0-9\s]', ' ', query_text.lower())
-    tokens = [w.strip() for w in cleaned.split() if len(w.strip()) > 1 and w.strip() not in ENGLISH_STOPWORDS]
-    if tokens:
-        return "+".join(tokens[:3])
-    return "ai"
+        return ["ai"]
+    from usecase_matcher import ENGLISH_STOPWORDS, scenario_matcher
+    
+    extracted = scenario_matcher.extract_keywords(query_text)
+    generic_words = {"ai", "driven", "data", "web", "online", "tool", "system", "app", "application", "thought", "think", "build"}
+    
+    keyphrases = [k for k in extracted if len(k) > 2 and not any(w in generic_words for w in k.split())]
+    
+    subqueries = []
+    for kp in sorted(keyphrases, key=lambda x: (len(x.split()), len(x)), reverse=True):
+        clean_kp = "+".join(kp.split()[:3])
+        if clean_kp and clean_kp not in subqueries:
+            subqueries.append(clean_kp)
+        if len(subqueries) >= 3:
+            break
+            
+    return subqueries or ["ai"]
 
 # Live Fallback Handler for ALL 12 categories dynamically
 def fetch_live_category_fallback(category_name, query=""):
     import urllib.parse
-    clean_q = _clean_fallback_query(query)
-    q_str = clean_q
+    subqueries = extract_fallback_subqueries(query)
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     results = []
+    seen_links = set()
     
     try:
-        if category_name == "GitHub Repo":
-            url = f"https://api.github.com/search/repositories?q={q_str}+sort:stars&per_page=10"
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                for item in res.json().get('items', []):
-                    results.append({
-                        "Type": "GitHub Repo",
-                        "Title": item.get('name', 'Unknown'),
-                        "Description": item.get('description') or "No description provided.",
-                        "Link": item.get('html_url', '#'),
-                        "Timestamp": time_ago(item.get('updated_at', ''))
-                    })
-        elif category_name == "Hugging Face Model":
-            url = f"https://huggingface.co/api/models?search={q_str}&sort=downloads&direction=-1&limit=10"
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                for m in res.json():
-                    results.append({
-                        "Type": "Hugging Face Model",
-                        "Title": m.get('id', ''),
-                        "Description": f"Author: {m.get('author', 'Unknown')} | Downloads: {m.get('downloads', 0)}",
-                        "Link": f"https://huggingface.co/{m.get('id', '')}",
-                        "Timestamp": time_ago(m.get('lastModified', ''))
-                    })
-        elif category_name == "Hugging Face Dataset":
-            url = f"https://huggingface.co/api/datasets?search={q_str}&sort=downloads&direction=-1&limit=10"
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                for d in res.json():
-                    results.append({
-                        "Type": "Hugging Face Dataset",
-                        "Title": d.get('id', ''),
-                        "Description": f"Author: {d.get('author', 'Unknown')} | Downloads: {d.get('downloads', 0)}",
-                        "Link": f"https://huggingface.co/datasets/{d.get('id', '')}",
-                        "Timestamp": time_ago(d.get('lastModified', ''))
-                    })
-        elif category_name == "arXiv Research Paper":
-            url = f"http://export.arxiv.org/api/query?search_query=all:{q_str}&start=0&max_results=10"
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                parsed = feedparser.parse(res.content)
-                for entry in parsed.entries:
-                    results.append({
-                        "Type": "arXiv Research Paper",
-                        "Title": entry.get('title', '').replace('\n', ' '),
-                        "Description": entry.get('summary', '').replace('\n', ' ')[:250] + "...",
-                        "Link": entry.get('link', '#'),
-                        "Timestamp": time_ago(entry.get('published', ''))
-                    })
-        elif category_name == "PyPI Release":
-            url = f"https://pypi.org/pypi?%3Aaction=search&term={q_str}"
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                titles = re.findall(r'<span class="package-snippet__name">(.*?)</span>', res.text)
-                descs = re.findall(r'<p class="package-snippet__description">(.*?)</p>', res.text)
-                for i in range(min(len(titles), 10)):
-                    name = titles[i].strip()
-                    desc_text = descs[i].strip() if i < len(descs) else "Python library on PyPI."
-                    results.append({
-                        "Type": "PyPI Release",
-                        "Title": name,
-                        "Description": desc_text,
-                        "Link": f"https://pypi.org/project/{name}/",
-                        "Timestamp": "Recent Release"
-                    })
-        elif category_name == "Corporate Blog":
-            url = f"https://dev.to/api/articles?tag={q_str}&per_page=10"
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                for a in res.json():
-                    results.append({
-                        "Type": "Corporate Blog",
-                        "Title": f"[BLOG] {a.get('title', '')}",
-                        "Description": a.get('description', '') or "Corporate tech blog post.",
-                        "Link": a.get('url', '#'),
-                        "Timestamp": time_ago(a.get('published_at', ''))
-                    })
-        elif category_name == "Medium & Dev Community":
-            url = f"https://dev.to/api/articles?per_page=10"
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                for a in res.json():
-                    results.append({
-                        "Type": "Medium & Dev Community",
-                        "Title": f"[DEV.TO] {a.get('title', '')}",
-                        "Description": a.get('description', '') or "Developer community article.",
-                        "Link": a.get('url', '#'),
-                        "Timestamp": time_ago(a.get('published_at', ''))
-                    })
-        elif category_name == "Reddit Discussion":
-            url = f"https://www.reddit.com/search.json?q={q_str}&sort=relevance&limit=10"
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                data = res.json().get('data', {}).get('children', [])
-                for child in data:
-                    d = child.get('data', {})
-                    results.append({
-                        "Type": "Reddit Discussion",
-                        "Title": f"[r/{d.get('subreddit', 'all')}] {d.get('title', '')}",
-                        "Description": (d.get('selftext', '') or "Reddit community discussion.")[:250] + "...",
-                        "Link": f"https://www.reddit.com{d.get('permalink', '')}",
-                        "Timestamp": time_ago(pd.to_datetime(d.get('created_utc', 0), unit='s').isoformat())
-                    })
-        elif category_name == "Product Hunt Launch":
-            url = f"https://api.github.com/search/repositories?q={q_str}+tool+launch&per_page=10"
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                for item in res.json().get('items', []):
-                    results.append({
-                        "Type": "Product Hunt Launch",
-                        "Title": f"[LAUNCH] {item.get('name', '')}",
-                        "Description": item.get('description') or "Product launch and developer tool specification.",
-                        "Link": item.get('html_url', '#'),
-                        "Timestamp": time_ago(item.get('updated_at', ''))
-                    })
-        elif category_name == "AI Course":
-            url = f"https://api.github.com/search/repositories?q={q_str}+course+learning&per_page=10"
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                for item in res.json().get('items', []):
-                    results.append({
-                        "Type": "AI Course",
-                        "Title": f"[COURSE] {item.get('name', '')}",
-                        "Description": item.get('description') or "Interactive engineering course and hands-on repository.",
-                        "Link": item.get('html_url', '#'),
-                        "Timestamp": time_ago(item.get('updated_at', ''))
-                    })
-        elif category_name == "YouTube Video":
-            url = f"https://api.github.com/search/repositories?q={q_str}+demo+walkthrough&per_page=10"
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                for item in res.json().get('items', []):
-                    results.append({
-                        "Type": "YouTube Video",
-                        "Title": f"[WALKTHROUGH] {item.get('name', '')}",
-                        "Description": item.get('description') or "Technical implementation video walkthrough and demo.",
-                        "Link": item.get('html_url', '#'),
-                        "Timestamp": time_ago(item.get('updated_at', ''))
-                    })
-        elif category_name == "Prompt & Guardrail Templates":
-            url = f"https://api.github.com/search/repositories?q={q_str}+prompt+guardrail&per_page=10"
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                for item in res.json().get('items', []):
-                    results.append({
-                        "Type": "Prompt & Guardrail Templates",
-                        "Title": f"[GUARDRAIL / PROMPT] {item.get('name', '')}",
-                        "Description": item.get('description') or "System prompt & guardrail template repository.",
-                        "Link": item.get('html_url', '#'),
-                        "Timestamp": time_ago(item.get('updated_at', ''))
-                    })
+        for q_str in subqueries:
+            if category_name == "GitHub Repo":
+                url = f"https://api.github.com/search/repositories?q={q_str}+sort:stars&per_page=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    for item in res.json().get('items', []):
+                        link = item.get('html_url', '#')
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            results.append({
+                                "Type": "GitHub Repo",
+                                "Title": item.get('name', 'Unknown'),
+                                "Description": item.get('description') or "No description provided.",
+                                "Link": link,
+                                "Timestamp": time_ago(item.get('updated_at', ''))
+                            })
+            elif category_name == "Hugging Face Model":
+                url = f"https://huggingface.co/api/models?search={q_str}&sort=downloads&direction=-1&limit=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    for m in res.json():
+                        link = f"https://huggingface.co/{m.get('id', '')}"
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            results.append({
+                                "Type": "Hugging Face Model",
+                                "Title": m.get('id', ''),
+                                "Description": f"Author: {m.get('author', 'Unknown')} | Downloads: {m.get('downloads', 0)}",
+                                "Link": link,
+                                "Timestamp": time_ago(m.get('lastModified', ''))
+                            })
+            elif category_name == "Hugging Face Dataset":
+                url = f"https://huggingface.co/api/datasets?search={q_str}&sort=downloads&direction=-1&limit=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    for d in res.json():
+                        link = f"https://huggingface.co/datasets/{d.get('id', '')}"
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            results.append({
+                                "Type": "Hugging Face Dataset",
+                                "Title": d.get('id', ''),
+                                "Description": f"Author: {d.get('author', 'Unknown')} | Downloads: {d.get('downloads', 0)}",
+                                "Link": link,
+                                "Timestamp": time_ago(d.get('lastModified', ''))
+                            })
+            elif category_name == "arXiv Research Paper":
+                url = f"http://export.arxiv.org/api/query?search_query=all:{q_str}&start=0&max_results=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    parsed = feedparser.parse(res.content)
+                    for entry in parsed.entries:
+                        link = entry.get('link', '#')
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            results.append({
+                                "Type": "arXiv Research Paper",
+                                "Title": entry.get('title', '').replace('\n', ' '),
+                                "Description": entry.get('summary', '').replace('\n', ' ')[:250] + "...",
+                                "Link": link,
+                                "Timestamp": time_ago(entry.get('published', ''))
+                            })
+            elif category_name == "PyPI Release":
+                url = f"https://pypi.org/pypi?%3Aaction=search&term={q_str}"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    titles = re.findall(r'<span class="package-snippet__name">(.*?)</span>', res.text)
+                    descs = re.findall(r'<p class="package-snippet__description">(.*?)</p>', res.text)
+                    for i in range(min(len(titles), 5)):
+                        name = titles[i].strip()
+                        link = f"https://pypi.org/project/{name}/"
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            desc_text = descs[i].strip() if i < len(descs) else "Python library on PyPI."
+                            results.append({
+                                "Type": "PyPI Release",
+                                "Title": name,
+                                "Description": desc_text,
+                                "Link": link,
+                                "Timestamp": "Recent Release"
+                            })
+            elif category_name == "Corporate Blog":
+                url = f"https://dev.to/api/articles?tag={q_str}&per_page=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    for a in res.json():
+                        link = a.get('url', '#')
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            results.append({
+                                "Type": "Corporate Blog",
+                                "Title": f"[BLOG] {a.get('title', '')}",
+                                "Description": a.get('description', '') or "Corporate tech blog post.",
+                                "Link": link,
+                                "Timestamp": time_ago(a.get('published_at', ''))
+                            })
+            elif category_name == "Medium & Dev Community":
+                url = f"https://dev.to/api/articles?per_page=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    for a in res.json():
+                        link = a.get('url', '#')
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            results.append({
+                                "Type": "Medium & Dev Community",
+                                "Title": f"[DEV.TO] {a.get('title', '')}",
+                                "Description": a.get('description', '') or "Developer community article.",
+                                "Link": link,
+                                "Timestamp": time_ago(a.get('published_at', ''))
+                            })
+            elif category_name == "Reddit Discussion":
+                url = f"https://www.reddit.com/search.json?q={q_str}&sort=relevance&limit=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    data = res.json().get('data', {}).get('children', [])
+                    for child in data:
+                        d = child.get('data', {})
+                        link = f"https://www.reddit.com{d.get('permalink', '')}"
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            results.append({
+                                "Type": "Reddit Discussion",
+                                "Title": f"[r/{d.get('subreddit', 'all')}] {d.get('title', '')}",
+                                "Description": (d.get('selftext', '') or "Reddit community discussion.")[:250] + "...",
+                                "Link": link,
+                                "Timestamp": time_ago(pd.to_datetime(d.get('created_utc', 0), unit='s').isoformat())
+                            })
+            elif category_name == "Product Hunt Launch":
+                url = f"https://api.github.com/search/repositories?q={q_str}+tool+launch&per_page=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    for item in res.json().get('items', []):
+                        link = item.get('html_url', '#')
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            results.append({
+                                "Type": "Product Hunt Launch",
+                                "Title": f"[LAUNCH] {item.get('name', '')}",
+                                "Description": item.get('description') or "Product launch and developer tool specification.",
+                                "Link": link,
+                                "Timestamp": time_ago(item.get('updated_at', ''))
+                            })
+            elif category_name == "AI Course":
+                url = f"https://api.github.com/search/repositories?q={q_str}+course+learning&per_page=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    for item in res.json().get('items', []):
+                        link = item.get('html_url', '#')
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            results.append({
+                                "Type": "AI Course",
+                                "Title": f"[COURSE] {item.get('name', '')}",
+                                "Description": item.get('description') or "Interactive engineering course and hands-on repository.",
+                                "Link": link,
+                                "Timestamp": time_ago(item.get('updated_at', ''))
+                            })
+            elif category_name == "YouTube Video":
+                url = f"https://api.github.com/search/repositories?q={q_str}+demo+walkthrough&per_page=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    for item in res.json().get('items', []):
+                        link = item.get('html_url', '#')
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            results.append({
+                                "Type": "YouTube Video",
+                                "Title": f"[WALKTHROUGH] {item.get('name', '')}",
+                                "Description": item.get('description') or "Technical implementation video walkthrough and demo.",
+                                "Link": link,
+                                "Timestamp": time_ago(item.get('updated_at', ''))
+                            })
+            elif category_name == "Prompt & Guardrail Templates":
+                url = f"https://api.github.com/search/repositories?q={q_str}+prompt+guardrail&per_page=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    for item in res.json().get('items', []):
+                        link = item.get('html_url', '#')
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            results.append({
+                                "Type": "Prompt & Guardrail Templates",
+                                "Title": f"[GUARDRAIL / PROMPT] {item.get('name', '')}",
+                                "Description": item.get('description') or "System prompt & guardrail template repository.",
+                                "Link": link,
+                                "Timestamp": time_ago(item.get('updated_at', ''))
+                            })
     except Exception as e:
         print(f"Error fetching live fallback for {category_name}: {e}")
         
