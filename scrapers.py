@@ -493,30 +493,32 @@ def get_prompt_template_updates():
         print(f"Error fetching dynamic prompt templates: {e}")
     return templates
 
-def extract_fallback_subqueries(query_text):
+def extract_fallback_subqueries(query_text, category_name=""):
     if not query_text:
         return ["ai"]
     from usecase_matcher import ENGLISH_STOPWORDS, scenario_matcher
     
     extracted = scenario_matcher.extract_keywords(query_text)
-    generic_words = {"ai", "driven", "data", "web", "online", "tool", "system", "app", "application", "thought", "think", "build"}
     
-    keyphrases = [k for k in extracted if len(k) > 2 and not any(w in generic_words for w in k.split())]
+    # Generic high-frequency unigrams that pollute live API search queries
+    generic_unigrams = {"ai", "driven", "data", "web", "online", "tool", "system", "app", "application", "thought", "think", "build", "using", "create", "looking", "help", "need", "want"}
     
-    subqueries = []
-    for kp in sorted(keyphrases, key=lambda x: (len(x.split()), len(x)), reverse=True):
-        clean_kp = "+".join(kp.split()[:3])
-        if clean_kp and clean_kp not in subqueries:
-            subqueries.append(clean_kp)
-        if len(subqueries) >= 3:
-            break
-            
-    return subqueries or ["ai"]
+    clean_phrases = []
+    for kp in extracted:
+        words = [w.strip() for w in kp.split() if w.strip() not in ENGLISH_STOPWORDS and w.strip() not in generic_unigrams and len(w.strip()) > 2]
+        if words:
+            phrase_str = "+".join(words[:2])
+            if phrase_str and phrase_str not in clean_phrases:
+                clean_phrases.append(phrase_str)
+                
+    clean_phrases.sort(key=lambda x: (len(x.split("+")), len(x)), reverse=True)
+    
+    return clean_phrases[:3] or ["ai"]
 
 # Live Fallback Handler for ALL 12 categories dynamically
 def fetch_live_category_fallback(category_name, query=""):
     import urllib.parse
-    subqueries = extract_fallback_subqueries(query)
+    subqueries = extract_fallback_subqueries(query, category_name)
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     results = []
     seen_links = set()
@@ -651,7 +653,7 @@ def fetch_live_category_fallback(category_name, query=""):
                                 "Timestamp": time_ago(pd.to_datetime(d.get('created_utc', 0), unit='s').isoformat())
                             })
             elif category_name == "Product Hunt Launch":
-                url = f"https://api.github.com/search/repositories?q={q_str}+tool+launch&per_page=5"
+                url = f"https://api.github.com/search/repositories?q={q_str}&per_page=5"
                 res = requests.get(url, headers=headers, timeout=6)
                 if res.status_code == 200:
                     for item in res.json().get('items', []):
@@ -666,7 +668,7 @@ def fetch_live_category_fallback(category_name, query=""):
                                 "Timestamp": time_ago(item.get('updated_at', ''))
                             })
             elif category_name == "AI Course":
-                url = f"https://api.github.com/search/repositories?q={q_str}+course+learning&per_page=5"
+                url = f"https://api.github.com/search/repositories?q={q_str}&per_page=5"
                 res = requests.get(url, headers=headers, timeout=6)
                 if res.status_code == 200:
                     for item in res.json().get('items', []):
@@ -681,7 +683,7 @@ def fetch_live_category_fallback(category_name, query=""):
                                 "Timestamp": time_ago(item.get('updated_at', ''))
                             })
             elif category_name == "YouTube Video":
-                url = f"https://api.github.com/search/repositories?q={q_str}+demo+walkthrough&per_page=5"
+                url = f"https://api.github.com/search/repositories?q={q_str}&per_page=5"
                 res = requests.get(url, headers=headers, timeout=6)
                 if res.status_code == 200:
                     for item in res.json().get('items', []):
@@ -696,7 +698,7 @@ def fetch_live_category_fallback(category_name, query=""):
                                 "Timestamp": time_ago(item.get('updated_at', ''))
                             })
             elif category_name == "Prompt & Guardrail Templates":
-                url = f"https://api.github.com/search/repositories?q={q_str}+prompt+guardrail&per_page=5"
+                url = f"https://api.github.com/search/repositories?q={q_str}&per_page=5"
                 res = requests.get(url, headers=headers, timeout=6)
                 if res.status_code == 200:
                     for item in res.json().get('items', []):

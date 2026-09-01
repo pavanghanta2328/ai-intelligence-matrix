@@ -133,20 +133,20 @@ class UniversalMultiRoleMatcher:
             if kw_lower in combined_text:
                 matched_kw.append(kw)
                 
-                # Dynamic math weighting based on n-gram length and field location
+                # Pure dynamic math weighting based on n-gram compound length (multi-word technical terms)
                 words_in_kw = len(kw_lower.split())
-                length_multiplier = 1.0 + (words_in_kw * 1.5)  # Keyphrase matches get heavy priority
+                weight = 1.0 + (words_in_kw * 2.0)
                 
                 if kw_lower in title:
-                    score_points += 40.0 * length_multiplier
+                    score_points += 35.0 * weight
                 elif kw_lower in p_title:
-                    score_points += 30.0 * length_multiplier
+                    score_points += 30.0 * weight
                 elif kw_lower in desc:
-                    score_points += 18.0 * length_multiplier
+                    score_points += 20.0 * weight
                 elif kw_lower in p_desc or kw_lower in p_outline:
-                    score_points += 10.0 * length_multiplier
+                    score_points += 10.0 * weight
                 else:
-                    score_points += 5.0 * length_multiplier
+                    score_points += 5.0 * weight
 
         # Normalized mathematical ratio formula (0.0 - 100.0%)
         if max_possible > 0 and score_points > 0:
