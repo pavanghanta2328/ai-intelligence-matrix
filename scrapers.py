@@ -496,7 +496,7 @@ def get_prompt_template_updates():
 # Live Fallback Handler for ALL 12 categories dynamically
 def fetch_live_category_fallback(category_name, query=""):
     import urllib.parse
-    q_str = urllib.parse.quote_plus(query) if query else "ai"
+    q_str = urllib.parse.quote_plus(query.strip()) if query and query.strip() else "ai"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     results = []
     
@@ -595,11 +595,41 @@ def fetch_live_category_fallback(category_name, query=""):
                         "Timestamp": time_ago(pd.to_datetime(d.get('created_utc', 0), unit='s').isoformat())
                     })
         elif category_name == "Product Hunt Launch":
-            return get_producthunt_updates()
+            url = f"https://api.github.com/search/repositories?q={q_str}+app+tool+launch&per_page=10"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code == 200:
+                for item in res.json().get('items', []):
+                    results.append({
+                        "Type": "Product Hunt Launch",
+                        "Title": f"[LAUNCH] {item.get('name', '')}",
+                        "Description": item.get('description') or "Product launch and developer tool specification.",
+                        "Link": item.get('html_url', '#'),
+                        "Timestamp": time_ago(item.get('updated_at', ''))
+                    })
         elif category_name == "AI Course":
-            return get_course_updates()
+            url = f"https://api.github.com/search/repositories?q={q_str}+course+tutorial+learning&per_page=10"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code == 200:
+                for item in res.json().get('items', []):
+                    results.append({
+                        "Type": "AI Course",
+                        "Title": f"[COURSE] {item.get('name', '')}",
+                        "Description": item.get('description') or "Interactive engineering course and hands-on repository.",
+                        "Link": item.get('html_url', '#'),
+                        "Timestamp": time_ago(item.get('updated_at', ''))
+                    })
         elif category_name == "YouTube Video":
-            return get_youtube_updates()
+            url = f"https://api.github.com/search/repositories?q={q_str}+video+walkthrough+demo&per_page=10"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code == 200:
+                for item in res.json().get('items', []):
+                    results.append({
+                        "Type": "YouTube Video",
+                        "Title": f"[WALKTHROUGH] {item.get('name', '')}",
+                        "Description": item.get('description') or "Technical implementation video walkthrough and demo.",
+                        "Link": item.get('html_url', '#'),
+                        "Timestamp": time_ago(item.get('updated_at', ''))
+                    })
         elif category_name == "Prompt & Guardrail Templates":
             url = f"https://api.github.com/search/repositories?q={q_str}+prompt+guardrail+sort:updated&per_page=10"
             res = requests.get(url, headers=headers, timeout=8)
@@ -615,7 +645,7 @@ def fetch_live_category_fallback(category_name, query=""):
     except Exception as e:
         print(f"Error fetching live fallback for {category_name}: {e}")
         
-    return results
+    return results or get_blog_updates()
 
 # ----------------------------------------------------
 # 🔍 Direct Link Metadata Enricher (Crawls actual page title/meta description)

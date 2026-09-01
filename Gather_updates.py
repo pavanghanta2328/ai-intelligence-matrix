@@ -709,14 +709,25 @@ else:
                                 desc = item.get("Description", "")
                                 
                                 st.markdown(f"""
-                                <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 14px 18px; margin-bottom: 12px;">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                        <a href="{link}" target="_blank" style="color: #38bdf8; font-size: 1.05rem; font-weight: 700; text-decoration: none;">🔗 {title}</a>
-                                        <span style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; padding: 2px 10px; border-radius: 12px; font-weight: 700; font-size: 0.8rem;">🎯 {score}% Match</span>
+                                <div style="background: #1e293b; border: 1px solid #334155; border-left: 5px solid #0284c7; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+                                        <a href="{link}" target="_blank" style="color: #38bdf8; font-size: 1.15rem; font-weight: 700; text-decoration: none; display: flex; align-items: center; gap: 6px;">
+                                            🔗 {title}
+                                        </a>
+                                        <span style="background: #0284c7; color: #ffffff; padding: 4px 14px; border-radius: 20px; font-weight: 800; font-size: 0.85rem; letter-spacing: 0.5px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                                            🎯 {score}% Match
+                                        </span>
                                     </div>
-                                    <p style="color: #cbd5e1; font-size: 0.9rem; margin-bottom: 8px;">{desc}</p>
-                                    <div style="background: rgba(245, 158, 11, 0.1); border-left: 3px solid #f59e0b; padding: 6px 12px; border-radius: 4px; font-size: 0.82rem; color: #fbbf24; margin-top: 6px;">
-                                        💡 <b>Developer Tip:</b> {tip}
+                                    <p style="color: #f1f5f9; font-size: 0.95rem; line-height: 1.6; margin-bottom: 12px; font-weight: 400;">
+                                        {desc}
+                                    </p>
+                                    <div style="background: #0f172a; border-left: 4px solid #f59e0b; padding: 10px 14px; border-radius: 6px; margin-top: 8px;">
+                                        <span style="color: #fbbf24; font-weight: 700; font-size: 0.88rem; display: block; margin-bottom: 2px;">
+                                            💡 Solution Architect Tip & Integration Guide:
+                                        </span>
+                                        <span style="color: #f8fafc; font-size: 0.88rem; line-height: 1.5; font-weight: 500;">
+                                            {tip}
+                                        </span>
                                     </div>
                                 </div>
                                 """, unsafe_allow_html=True)
