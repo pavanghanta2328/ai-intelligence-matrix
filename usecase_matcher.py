@@ -103,10 +103,35 @@ class UniversalMultiRoleMatcher:
 
         return list(final_terms)
 
-    def score_item(self, item, keywords):
+    def extract_subject_anchor(self, text):
+        """
+        Dynamically extracts the core technical Subject Anchor (the primary compound noun phrase)
+        from raw prompt text without using any hardcoded domain lists.
+        """
+        if not text:
+            return ""
+        
+        # Split text into natural language clauses
+        clauses = re.split(r'[,;\.\n]| and | that | with | for ', text.lower())
+        
+        candidates = []
+        for clause in clauses:
+            words = [w.strip() for w in re.findall(r'\b[a-zA-Z0-9\-]+\b', clause) if w.strip() not in ENGLISH_STOPWORDS and len(w.strip()) > 2]
+            if len(words) >= 2:
+                candidates.append(" ".join(words[:3]))
+            elif len(words) == 1:
+                candidates.append(words[0])
+                
+        if candidates:
+            # Prioritize compound technical phrases as the primary subject anchor
+            candidates.sort(key=lambda x: (len(x.split()), len(x)), reverse=True)
+            return candidates[0]
+        return ""
+
+    def score_item(self, item, keywords, subject_anchor=""):
         """
         Calculates mathematical match score based purely on technical term & keyphrase match,
-        filtering out generic stopword noise.
+        filtering out generic stopword noise and enforcing subject anchor alignment.
         """
         if not keywords:
             return 0.0, [], ""
@@ -147,6 +172,16 @@ class UniversalMultiRoleMatcher:
                     score_points += 10.0 * weight
                 else:
                     score_points += 5.0 * weight
+
+        # Subject Anchor Alignment Check (Subject Mismatch Penalty)
+        if subject_anchor:
+            anchor_words = [w for w in subject_anchor.split() if w not in ENGLISH_STOPWORDS]
+            has_anchor = any(w in combined_text for w in anchor_words)
+            if not has_anchor:
+                # Heavy penalty if item completely misses the core subject anchor
+                score_points *= 0.05
+            else:
+                score_points *= 1.5
 
         # Normalized mathematical ratio formula (0.0 - 100.0%)
         if max_possible > 0 and score_points > 0:
@@ -190,6 +225,7 @@ class UniversalMultiRoleMatcher:
 
     def match_scenario(self, scenario_text, all_updates_dict, top_k=5):
         keywords = self.extract_keywords(scenario_text)
+        subject_anchor = self.extract_subject_anchor(scenario_text)
         
         results = {}
         low_confidence_categories = []
@@ -199,7 +235,7 @@ class UniversalMultiRoleMatcher:
             scored_items = []
             
             for item in cat_items:
-                score, matched_kw, tip = self.score_item(item, keywords)
+                score, matched_kw, tip = self.score_item(item, keywords, subject_anchor)
                 if score > 0:
                     item_copy = dict(item)
                     item_copy["MatchScore"] = score
@@ -219,6 +255,7 @@ class UniversalMultiRoleMatcher:
         return {
             "scenario": scenario_text,
             "keywords": keywords,
+            "subject_anchor": subject_anchor,
             "recommendations": results,
             "low_confidence_categories": low_confidence_categories
         }

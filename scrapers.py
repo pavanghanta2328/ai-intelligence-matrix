@@ -498,22 +498,34 @@ def extract_fallback_subqueries(query_text, category_name=""):
         return ["ai"]
     from usecase_matcher import ENGLISH_STOPWORDS, scenario_matcher
     
-    extracted = scenario_matcher.extract_keywords(query_text)
+    # 1. Dynamically extract the Primary Subject Anchor from scenario text
+    subject_anchor = scenario_matcher.extract_subject_anchor(query_text)
     
-    # Generic high-frequency unigrams that pollute live API search queries
+    # 2. Extract Action Clauses & Modifiers
+    clauses = re.split(r'[,;\.\n]| and | that | with | for ', query_text.lower())
     generic_unigrams = {"ai", "driven", "data", "web", "online", "tool", "system", "app", "application", "thought", "think", "build", "using", "create", "looking", "help", "need", "want"}
     
-    clean_phrases = []
-    for kp in extracted:
-        words = [w.strip() for w in kp.split() if w.strip() not in ENGLISH_STOPWORDS and w.strip() not in generic_unigrams and len(w.strip()) > 2]
+    subqueries = []
+    anchor_clean = ""
+    
+    if subject_anchor:
+        anchor_clean = "+".join([w for w in subject_anchor.split() if w not in ENGLISH_STOPWORDS and w not in generic_unigrams])
+        if anchor_clean:
+            subqueries.append(anchor_clean)
+            
+    for clause in clauses:
+        words = [w.strip() for w in re.findall(r'\b[a-zA-Z0-9\-]+\b', clause) if w.strip() not in ENGLISH_STOPWORDS and w.strip() not in generic_unigrams and len(w.strip()) > 2]
         if words:
             phrase_str = "+".join(words[:2])
-            if phrase_str and phrase_str not in clean_phrases:
-                clean_phrases.append(phrase_str)
+            if anchor_clean and anchor_clean not in phrase_str:
+                anchored_query = f"{anchor_clean}+{phrase_str}"
+            else:
+                anchored_query = phrase_str
                 
-    clean_phrases.sort(key=lambda x: (len(x.split("+")), len(x)), reverse=True)
-    
-    return clean_phrases[:3] or ["ai"]
+            if anchored_query and anchored_query not in subqueries:
+                subqueries.append(anchored_query)
+                
+    return subqueries[:3] or ["ai"]
 
 # Live Fallback Handler for ALL 12 categories dynamically
 def fetch_live_category_fallback(category_name, query=""):
