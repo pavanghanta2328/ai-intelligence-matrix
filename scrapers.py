@@ -493,16 +493,28 @@ def get_prompt_template_updates():
         print(f"Error fetching dynamic prompt templates: {e}")
     return templates
 
+def _clean_fallback_query(query_text):
+    if not query_text:
+        return "ai"
+    # Remove punctuation, colons, commas, quotes
+    cleaned = re.sub(r'[^a-zA-Z0-9\s]', ' ', query_text.lower())
+    stopwords = {"we", "need", "to", "build", "a", "an", "the", "and", "or", "for", "with", "in", "on", "at", "by", "is", "are", "requirement", "requirements", "project", "system", "app", "application", "scenario", "solution"}
+    tokens = [w.strip() for w in cleaned.split() if len(w.strip()) > 1 and w.strip() not in stopwords]
+    if tokens:
+        return "+".join(tokens[:5])  # Top 5 core technical terms
+    return "ai"
+
 # Live Fallback Handler for ALL 12 categories dynamically
 def fetch_live_category_fallback(category_name, query=""):
     import urllib.parse
-    q_str = urllib.parse.quote_plus(query.strip()) if query and query.strip() else "ai"
+    clean_q = _clean_fallback_query(query)
+    q_str = clean_q
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     results = []
     
     try:
         if category_name == "GitHub Repo":
-            url = f"https://api.github.com/search/repositories?q={q_str}+sort:updated&per_page=10"
+            url = f"https://api.github.com/search/repositories?q={q_str}+sort:stars&per_page=10"
             res = requests.get(url, headers=headers, timeout=8)
             if res.status_code == 200:
                 for item in res.json().get('items', []):
@@ -514,7 +526,7 @@ def fetch_live_category_fallback(category_name, query=""):
                         "Timestamp": time_ago(item.get('updated_at', ''))
                     })
         elif category_name == "Hugging Face Model":
-            url = f"https://huggingface.co/api/models?search={q_str}&sort=lastModified&direction=-1&limit=10"
+            url = f"https://huggingface.co/api/models?search={q_str}&sort=downloads&direction=-1&limit=10"
             res = requests.get(url, headers=headers, timeout=8)
             if res.status_code == 200:
                 for m in res.json():
@@ -526,7 +538,7 @@ def fetch_live_category_fallback(category_name, query=""):
                         "Timestamp": time_ago(m.get('lastModified', ''))
                     })
         elif category_name == "Hugging Face Dataset":
-            url = f"https://huggingface.co/api/datasets?search={q_str}&sort=lastModified&direction=-1&limit=10"
+            url = f"https://huggingface.co/api/datasets?search={q_str}&sort=downloads&direction=-1&limit=10"
             res = requests.get(url, headers=headers, timeout=8)
             if res.status_code == 200:
                 for d in res.json():
@@ -567,9 +579,19 @@ def fetch_live_category_fallback(category_name, query=""):
                         "Timestamp": "Recent Release"
                     })
         elif category_name == "Corporate Blog":
-            return get_blog_updates()
-        elif category_name == "Medium & Dev Community":
             url = f"https://dev.to/api/articles?tag={q_str}&per_page=10"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code == 200:
+                for a in res.json():
+                    results.append({
+                        "Type": "Corporate Blog",
+                        "Title": f"[BLOG] {a.get('title', '')}",
+                        "Description": a.get('description', '') or "Corporate tech blog post.",
+                        "Link": a.get('url', '#'),
+                        "Timestamp": time_ago(a.get('published_at', ''))
+                    })
+        elif category_name == "Medium & Dev Community":
+            url = f"https://dev.to/api/articles?per_page=10"
             res = requests.get(url, headers=headers, timeout=8)
             if res.status_code == 200:
                 for a in res.json():
@@ -581,7 +603,7 @@ def fetch_live_category_fallback(category_name, query=""):
                         "Timestamp": time_ago(a.get('published_at', ''))
                     })
         elif category_name == "Reddit Discussion":
-            url = f"https://www.reddit.com/search.json?q={q_str}&sort=new&limit=10"
+            url = f"https://www.reddit.com/search.json?q={q_str}&sort=relevance&limit=10"
             res = requests.get(url, headers=headers, timeout=8)
             if res.status_code == 200:
                 data = res.json().get('data', {}).get('children', [])
@@ -595,7 +617,7 @@ def fetch_live_category_fallback(category_name, query=""):
                         "Timestamp": time_ago(pd.to_datetime(d.get('created_utc', 0), unit='s').isoformat())
                     })
         elif category_name == "Product Hunt Launch":
-            url = f"https://api.github.com/search/repositories?q={q_str}+app+tool+launch&per_page=10"
+            url = f"https://api.github.com/search/repositories?q={q_str}+tool+launch&per_page=10"
             res = requests.get(url, headers=headers, timeout=8)
             if res.status_code == 200:
                 for item in res.json().get('items', []):
@@ -607,7 +629,7 @@ def fetch_live_category_fallback(category_name, query=""):
                         "Timestamp": time_ago(item.get('updated_at', ''))
                     })
         elif category_name == "AI Course":
-            url = f"https://api.github.com/search/repositories?q={q_str}+course+tutorial+learning&per_page=10"
+            url = f"https://api.github.com/search/repositories?q={q_str}+course+learning&per_page=10"
             res = requests.get(url, headers=headers, timeout=8)
             if res.status_code == 200:
                 for item in res.json().get('items', []):
@@ -619,7 +641,7 @@ def fetch_live_category_fallback(category_name, query=""):
                         "Timestamp": time_ago(item.get('updated_at', ''))
                     })
         elif category_name == "YouTube Video":
-            url = f"https://api.github.com/search/repositories?q={q_str}+video+walkthrough+demo&per_page=10"
+            url = f"https://api.github.com/search/repositories?q={q_str}+demo+walkthrough&per_page=10"
             res = requests.get(url, headers=headers, timeout=8)
             if res.status_code == 200:
                 for item in res.json().get('items', []):
@@ -631,7 +653,7 @@ def fetch_live_category_fallback(category_name, query=""):
                         "Timestamp": time_ago(item.get('updated_at', ''))
                     })
         elif category_name == "Prompt & Guardrail Templates":
-            url = f"https://api.github.com/search/repositories?q={q_str}+prompt+guardrail+sort:updated&per_page=10"
+            url = f"https://api.github.com/search/repositories?q={q_str}+prompt+guardrail&per_page=10"
             res = requests.get(url, headers=headers, timeout=8)
             if res.status_code == 200:
                 for item in res.json().get('items', []):
@@ -645,7 +667,7 @@ def fetch_live_category_fallback(category_name, query=""):
     except Exception as e:
         print(f"Error fetching live fallback for {category_name}: {e}")
         
-    return results or get_blog_updates()
+    return results
 
 # ----------------------------------------------------
 # 🔍 Direct Link Metadata Enricher (Crawls actual page title/meta description)

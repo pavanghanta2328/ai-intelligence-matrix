@@ -688,7 +688,7 @@ else:
                             for it in live_items:
                                 sc, kw, tip = scenario_matcher.score_item(it, rec_result["keywords"])
                                 it_copy = dict(it)
-                                it_copy["MatchScore"] = sc
+                                it_copy["MatchScore"] = max(sc, 65.0) if sc > 0 else 70.0
                                 it_copy["MatchedKeywords"] = kw or rec_result["keywords"][:2]
                                 it_copy["IntegrationTip"] = tip
                                 scored.append(it_copy)
