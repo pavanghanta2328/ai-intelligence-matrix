@@ -496,12 +496,11 @@ def get_prompt_template_updates():
 def _clean_fallback_query(query_text):
     if not query_text:
         return "ai"
-    # Remove punctuation, colons, commas, quotes
+    from usecase_matcher import ENGLISH_STOPWORDS
     cleaned = re.sub(r'[^a-zA-Z0-9\s]', ' ', query_text.lower())
-    stopwords = {"we", "need", "to", "build", "a", "an", "the", "and", "or", "for", "with", "in", "on", "at", "by", "is", "are", "requirement", "requirements", "project", "system", "app", "application", "scenario", "solution"}
-    tokens = [w.strip() for w in cleaned.split() if len(w.strip()) > 1 and w.strip() not in stopwords]
+    tokens = [w.strip() for w in cleaned.split() if len(w.strip()) > 1 and w.strip() not in ENGLISH_STOPWORDS]
     if tokens:
-        return "+".join(tokens[:5])  # Top 5 core technical terms
+        return "+".join(tokens[:3])
     return "ai"
 
 # Live Fallback Handler for ALL 12 categories dynamically
