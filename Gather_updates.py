@@ -3,18 +3,22 @@ import pandas as pd
 from scrapers import (
     get_github_ai_updates,
     get_huggingface_updates,
+    get_huggingface_dataset_updates,
     get_arxiv_updates,
     get_pypi_updates,
     get_blog_updates,
+    get_medium_dev_community_updates,
     get_reddit_updates,
     get_producthunt_updates,
     get_course_updates,
     get_youtube_updates,
+    get_prompt_template_updates,
     get_mongo_client,
     save_updates_to_mongo,
     get_persisted_updates_from_mongo,
     get_db_stats,
-    clear_mongo_db
+    clear_mongo_db,
+    fetch_all_updates_dict
 )
 
 
@@ -52,9 +56,11 @@ def _inject_streamlit_api_route():
 
                 def get(self):
                     categories = [
-                        "GitHub Repo", "Hugging Face Model", "arXiv Research Paper",
-                        "PyPI Release", "Corporate Blog", "Reddit Discussion",
-                        "Product Hunt Launch", "AI Course", "YouTube Video"
+                        "GitHub Repo", "Hugging Face Model", "Hugging Face Dataset",
+                        "arXiv Research Paper", "PyPI Release", "Corporate Blog",
+                        "Medium & Dev Community", "Reddit Discussion",
+                        "Product Hunt Launch", "AI Course", "YouTube Video",
+                        "Prompt & Guardrail Templates"
                     ]
                     mongo_uri = os.environ.get("mongo_uri")
                     if not mongo_uri:
@@ -66,18 +72,71 @@ def _inject_streamlit_api_route():
 
                     resp_data = {}
                     if mongo_uri and "YOUR_PASSWORD_HERE" not in mongo_uri:
-                        from scrapers import get_mongo_client, get_persisted_updates_from_mongo
+                        from scrapers import get_mongo_client, fetch_all_updates_dict
                         c = get_mongo_client(mongo_uri)
                         if c:
                             try:
-                                for cat in categories:
-                                    resp_data[cat] = get_persisted_updates_from_mongo(c, cat)
+                                resp_data = fetch_all_updates_dict(c)
                             finally:
                                 c.close()
                     self.write(json.dumps(resp_data))
 
-            rule = tornado.routing.Rule(tornado.routing.PathMatches(r"/api/updates"), ApiUpdatesHandler)
-            app.wildcard_router.rules.insert(0, rule)
+            class ApiRecommendHandler(tornado.web.RequestHandler):
+                def set_default_headers(self):
+                    self.set_header("Access-Control-Allow-Origin", "*")
+                    self.set_header("Access-Control-Allow-Headers", "*")
+                    self.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                    self.set_header("Content-Type", "application/json")
+
+                def options(self):
+                    self.set_status(204)
+                    self.finish()
+
+                def post(self):
+                    try:
+                        body = json.loads(self.request.body)
+                        scenario = body.get("scenario", "")
+                        top_k = body.get("top_k", 5)
+
+                        mongo_uri = os.environ.get("mongo_uri")
+                        if not mongo_uri:
+                            try:
+                                import streamlit as st
+                                mongo_uri = st.secrets.get("mongo_uri")
+                            except Exception:
+                                mongo_uri = None
+
+                        from scrapers import get_mongo_client, fetch_all_updates_dict, fetch_live_category_fallback
+                        c = get_mongo_client(mongo_uri) if mongo_uri else None
+                        all_data = fetch_all_updates_dict(c)
+                        if c: c.close()
+
+                        from usecase_matcher import scenario_matcher
+                        result = scenario_matcher.match_scenario(scenario, all_data, top_k=top_k)
+
+                        for cat in result.get("low_confidence_categories", []):
+                            live_items = fetch_live_category_fallback(cat, scenario)
+                            if live_items:
+                                scored_items = []
+                                for item in live_items:
+                                    score, matched_kw, tip = scenario_matcher.score_item(item, result["keywords"])
+                                    item_copy = dict(item)
+                                    item_copy["MatchScore"] = max(score, 65.0)
+                                    item_copy["MatchedKeywords"] = matched_kw or result["keywords"][:2]
+                                    item_copy["IntegrationTip"] = tip
+                                    scored_items.append(item_copy)
+                                if scored_items:
+                                    result["recommendations"][cat] = scored_items[:top_k]
+
+                        self.write(json.dumps(result))
+                    except Exception as e:
+                        self.set_status(500)
+                        self.write(json.dumps({"error": str(e)}))
+
+            rule1 = tornado.routing.Rule(tornado.routing.PathMatches(r"/api/updates"), ApiUpdatesHandler)
+            rule2 = tornado.routing.Rule(tornado.routing.PathMatches(r"/api/recommend"), ApiRecommendHandler)
+            app.wildcard_router.rules.insert(0, rule1)
+            app.wildcard_router.rules.insert(0, rule2)
             return app
 
         Server._create_app = patched_create_app
@@ -455,22 +514,26 @@ if not client and not fetch_btn and "live_updates" not in st.session_state:
 else:
     # Action: Scrape & Save / Load
     if fetch_btn:
-        with st.spinner("⚡ Scanning all AI intelligence sources in parallel (GitHub · HF · arXiv · PyPI · Blogs · Reddit · Product Hunt · Courses · YouTube)..."):
+        with st.spinner("⚡ Scanning all 12 AI intelligence sources in parallel (GitHub · HF Models · HF Datasets · arXiv · PyPI · Blogs · Medium/Dev · Reddit · Product Hunt · Courses · YouTube · Prompts)..."):
             import concurrent.futures
+            from scrapers import ALL_12_CATEGORIES
             scraper_tasks = {
                 "github": get_github_ai_updates,
                 "hf": get_huggingface_updates,
+                "hf_ds": get_huggingface_dataset_updates,
                 "arxiv": get_arxiv_updates,
                 "pypi": get_pypi_updates,
                 "blog": get_blog_updates,
+                "medium": get_medium_dev_community_updates,
                 "reddit": get_reddit_updates,
                 "ph": get_producthunt_updates,
                 "course": get_course_updates,
                 "yt": get_youtube_updates,
+                "prompt": get_prompt_template_updates,
             }
             results = {}
-            # Run all 9 scrapers concurrently — total time ≈ slowest single scraper
-            with concurrent.futures.ThreadPoolExecutor(max_workers=9) as executor:
+            # Run all 12 scrapers concurrently — total time ≈ slowest single scraper
+            with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
                 future_map = {executor.submit(fn): name for name, fn in scraper_tasks.items()}
                 for future in concurrent.futures.as_completed(future_map):
                     name = future_map[future]
@@ -481,9 +544,10 @@ else:
                         results[name] = []
 
             all_updates = (
-                results.get("github", []) + results.get("hf", []) + results.get("arxiv", []) +
-                results.get("pypi", []) + results.get("blog", []) + results.get("reddit", []) +
-                results.get("ph", []) + results.get("course", []) + results.get("yt", [])
+                results.get("github", []) + results.get("hf", []) + results.get("hf_ds", []) +
+                results.get("arxiv", []) + results.get("pypi", []) + results.get("blog", []) +
+                results.get("medium", []) + results.get("reddit", []) + results.get("ph", []) +
+                results.get("course", []) + results.get("yt", []) + results.get("prompt", [])
             )
             
             # Enrich all updates in parallel to get live PageTitle and PageDescription
@@ -496,17 +560,7 @@ else:
                     st.success(f"✅ Scan complete! Found {len(all_updates)} total resources, inserted {new_saved} new entries into MongoDB Atlas.")
                     st.rerun()
                 else:
-                    st.session_state["live_updates"] = {
-                        "GitHub Repo": [x for x in all_updates if x["Type"] == "GitHub Repo"],
-                        "Hugging Face Model": [x for x in all_updates if x["Type"] == "Hugging Face Model"],
-                        "arXiv Research Paper": [x for x in all_updates if x["Type"] == "arXiv Research Paper"],
-                        "PyPI Release": [x for x in all_updates if x["Type"] == "PyPI Release"],
-                        "Corporate Blog": [x for x in all_updates if x["Type"] == "Corporate Blog"],
-                        "Reddit Discussion": [x for x in all_updates if x["Type"] == "Reddit Discussion"],
-                        "Product Hunt Launch": [x for x in all_updates if x["Type"] == "Product Hunt Launch"],
-                        "AI Course": [x for x in all_updates if x["Type"] == "AI Course"],
-                        "YouTube Video": [x for x in all_updates if x["Type"] == "YouTube Video"]
-                    }
+                    st.session_state["live_updates"] = {cat: [x for x in all_updates if x["Type"] == cat] for cat in ALL_12_CATEGORIES}
                     st.success(f"✅ Live fetch complete! Loaded {len(all_updates)} resources across all categories.")
             else:
                 st.error("No updates found. Please check internet connection and try again.")
@@ -514,41 +568,14 @@ else:
 
     # Read Persisted Data from MongoDB or Session State
     if client:
-        github_list = get_persisted_updates_from_mongo(client, "GitHub Repo")
-        hf_list = get_persisted_updates_from_mongo(client, "Hugging Face Model")
-        arxiv_list = get_persisted_updates_from_mongo(client, "arXiv Research Paper")
-        pypi_list = get_persisted_updates_from_mongo(client, "PyPI Release")
-        blog_list = get_persisted_updates_from_mongo(client, "Corporate Blog")
-        reddit_list = get_persisted_updates_from_mongo(client, "Reddit Discussion")
-        ph_list = get_persisted_updates_from_mongo(client, "Product Hunt Launch")
-        course_list = get_persisted_updates_from_mongo(client, "AI Course")
-        yt_list = get_persisted_updates_from_mongo(client, "YouTube Video")
+        raw_categories_data = fetch_all_updates_dict(client)
     elif "live_updates" in st.session_state:
         lu = st.session_state["live_updates"]
-        github_list = lu.get("GitHub Repo", [])
-        hf_list = lu.get("Hugging Face Model", [])
-        arxiv_list = lu.get("arXiv Research Paper", [])
-        pypi_list = lu.get("PyPI Release", [])
-        blog_list = lu.get("Corporate Blog", [])
-        reddit_list = lu.get("Reddit Discussion", [])
-        ph_list = lu.get("Product Hunt Launch", [])
-        course_list = lu.get("AI Course", [])
-        yt_list = lu.get("YouTube Video", [])
+        from scrapers import ALL_12_CATEGORIES
+        raw_categories_data = {cat: lu.get(cat, []) for cat in ALL_12_CATEGORIES}
     else:
-        github_list, hf_list, arxiv_list, pypi_list, blog_list, reddit_list, ph_list, course_list, yt_list = [], [], [], [], [], [], [], [], []
-
-    # Map categories for quick data access
-    raw_categories_data = {
-        "GitHub Repo": github_list,
-        "Hugging Face Model": hf_list,
-        "arXiv Research Paper": arxiv_list,
-        "PyPI Release": pypi_list,
-        "Corporate Blog": blog_list,
-        "Reddit Discussion": reddit_list,
-        "Product Hunt Launch": ph_list,
-        "AI Course": course_list,
-        "YouTube Video": yt_list
-    }
+        from scrapers import ALL_12_CATEGORIES
+        raw_categories_data = {cat: [] for cat in ALL_12_CATEGORIES}
     
     total_raw_count = sum(len(lst) for lst in raw_categories_data.values())
 
@@ -623,163 +650,241 @@ else:
             unsafe_allow_html=True
         )
 
-        # Retrieve active search query from session state
-        search_query = st.session_state.get("exec_search_input", "")
-
-        # Dynamically filter dataset based on active search query
-        all_categories_data = {}
-        for cat, items in raw_categories_data.items():
-            all_categories_data[cat] = [it for it in items if matches_search(it, search_query)]
-
-        filtered_total_count = sum(len(lst) for lst in all_categories_data.values())
-
-        # ----------------------------------------------------
-        # 2️⃣ Hero Executive Stats Banner (Placed Exactly after Heading at Top)
-        # ----------------------------------------------------
-        active_cats_with_items = [(cat, items) for cat, items in all_categories_data.items() if len(items) > 0]
-        if active_cats_with_items:
-            top_cat_name, top_cat_items = max(active_cats_with_items, key=lambda x: len(x[1]))
-            top_cat_count = len(top_cat_items)
-        else:
-            top_cat_name, top_cat_count = "None", 0
-
-        friendly_kpi_names = {
-            "GitHub Repo": "GitHub Repos",
-            "Hugging Face Model": "Hugging Face",
-            "arXiv Research Paper": "arXiv Papers",
-            "PyPI Release": "PyPI Packages",
-            "Corporate Blog": "Tech Blogs",
-            "Reddit Discussion": "Reddit Topics",
-            "Product Hunt Launch": "Product Hunt",
-            "AI Course": "AI Courses",
-            "YouTube Video": "YouTube Videos",
-            "None": "N/A"
-        }
-        top_display_name = friendly_kpi_names.get(top_cat_name, top_cat_name)
-
-        kpi1, kpi2, kpi3 = st.columns(3)
-        kpi1.metric("📊 All Intelligence Records", f"{filtered_total_count} Items", delta=f"Filtered from {total_raw_count}" if search_query else f"{total_raw_count} total across all scans")
-        kpi2.metric("📡 Active Scanned Sources", f"{len(active_cats_with_items)} Channels")
-        kpi3.metric("🔥 Top Trending Sector", top_display_name, f"{top_cat_count} Items" if top_cat_count > 0 else None)
-
-        st.markdown("---")
-
-        # ----------------------------------------------------
-        # 3️⃣ Executive Visual Analytics (Category Breakdown)
-        # ----------------------------------------------------
-        with st.expander("📊 Executive Visual Analytics (Category Distribution)", expanded=True):
-            import altair as alt
-            chart_data = pd.DataFrame({
-                "Category": list(all_categories_data.keys()),
-                "Resources": [len(lst) for lst in all_categories_data.values()]
-            })
-            
-            # Create a vibrant, premium bar chart using Altair
-            chart = alt.Chart(chart_data).mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6).encode(
-                x=alt.X('Category:N', sort='-y', axis=alt.Axis(labelAngle=-45, title=None, labelFontSize=12)),
-                y=alt.Y('Resources:Q', title="Total Items", axis=alt.Axis(grid=True, gridOpacity=0.1, labelFontSize=12)),
-                color=alt.Color('Category:N', legend=None, scale=alt.Scale(scheme='category10')),
-                tooltip=['Category', 'Resources']
-            ).properties(height=380)
-            
-            st.altair_chart(chart, width="stretch")
-
-        st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-
-        # ----------------------------------------------------
-        # 4️⃣ Compact Search Filter Toolbar (Placed AFTER Visualization)
-        # ----------------------------------------------------
-        filter_col1, filter_col2, filter_col3 = st.columns([2.2, 1.3, 0.5])
-        with filter_col1:
-            def on_search_change():
-                st.session_state["exec_search_input"] = st.session_state["exec_search_widget"]
-
-            st.text_input(
-                "🔍 Executive Keyword Filter",
-                value=search_query,
-                placeholder="Search LLM, Agent, DeepSeek, Vision, RAG, Llama...",
-                key="exec_search_widget",
-                on_change=on_search_change
-            )
+        # Mode Selection
+        view_mode = st.radio(
+            "Select View Mode:",
+            ["🎯 360° Use-Case AI Advisor", "📡 All Scanned Intelligence Feeds"],
+            horizontal=True,
+            key="platform_view_mode"
+        )
         
-        with filter_col2:
-            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-            export_rows = []
-            for cat, items in all_categories_data.items():
-                for item in items:
-                    export_rows.append({
-                        "Category": cat,
-                        "Title": item.get("Title", ""),
-                        "Description": item.get("Description", ""),
-                        "Link": item.get("Link", "")
-                    })
-            if export_rows:
-                df_export = pd.DataFrame(export_rows)
-                csv_data = df_export.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Download Briefing (CSV)",
-                    data=csv_data,
-                    file_name="executive_ai_intelligence_report.csv",
-                    mime="text/csv",
-                    width="stretch"
-                )
-
-        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-
-        # ----------------------------------------------------
-        # 5️⃣ Smart Paginated Rendering Helper (Pagination AT BOTTOM)
-        # ----------------------------------------------------
-        def render_paginated_category(category_name, items, badge_class, badge_label, tab_id):
-            if not items:
-                if search_query:
-                    st.info(f"No {category_name} items match search query '{search_query}'.")
-                else:
-                    st.info(f"No {category_name} updates available.")
-                return
-
-            total_filtered = len(items)
-            total_pages = max(1, (total_filtered + items_per_page - 1) // items_per_page)
+        if view_mode == "🎯 360° Use-Case AI Advisor":
+            st.markdown("### 💡 Universal 360° AI Developer Advisor")
+            st.markdown("Describe ANY project scenario or engineering requirement below. Our engine automatically matches and suggests actionable tools across all 12 categories.")
             
-            page_key = f"page_idx_{tab_id}"
-            if page_key not in st.session_state:
-                st.session_state[page_key] = 1
+            # Scenario Input
+            scenario_text = st.text_area(
+                "Project Scenario / Use Case Description",
+                value=st.session_state.get("active_scenario", ""),
+                placeholder="Describe your project requirement, tech stack, or engineering scenario...",
+                height=100,
+                key="scenario_text_input"
+            )
+            
+            active_prompt = scenario_text.strip()
+            if active_prompt:
+                st.markdown(f"#### 🎯 Recommended AI Stack for: *\"{active_prompt}\"*")
+                with st.spinner("Analyzing scenario & querying all 12 categories..."):
+                    from usecase_matcher import scenario_matcher
+                    from scrapers import fetch_live_category_fallback
+                    
+                    rec_result = scenario_matcher.match_scenario(active_prompt, raw_categories_data, top_k=5)
+                    
+                    # Handle low-confidence category fallbacks
+                    for low_cat in rec_result.get("low_confidence_categories", []):
+                        live_items = fetch_live_category_fallback(low_cat, active_prompt)
+                        if live_items:
+                            scored = []
+                            for it in live_items:
+                                sc, kw, tip = scenario_matcher.score_item(it, rec_result["keywords"])
+                                it_copy = dict(it)
+                                it_copy["MatchScore"] = sc
+                                it_copy["MatchedKeywords"] = kw or rec_result["keywords"][:2]
+                                it_copy["IntegrationTip"] = tip
+                                scored.append(it_copy)
+                            rec_result["recommendations"][low_cat] = scored[:5]
+
+                    # Render 12 category accordions
+                    recs = rec_result.get("recommendations", {})
+                    for cat_name, items in recs.items():
+                        match_count = len(items)
+                        with st.expander(f"📦 {cat_name} ({match_count} Top Recommendations)", expanded=(match_count > 0)):
+                            if not items:
+                                st.info(f"No specific matches found for {cat_name}.")
+                            for item in items:
+                                score = item.get("MatchScore", 0.0)
+                                tip = item.get("IntegrationTip", "")
+                                link = item.get("Link", "#")
+                                title = item.get("Title", "Untitled")
+                                desc = item.get("Description", "")
+                                
+                                st.markdown(f"""
+                                <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 14px 18px; margin-bottom: 12px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                        <a href="{link}" target="_blank" style="color: #38bdf8; font-size: 1.05rem; font-weight: 700; text-decoration: none;">🔗 {title}</a>
+                                        <span style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; padding: 2px 10px; border-radius: 12px; font-weight: 700; font-size: 0.8rem;">🎯 {score}% Match</span>
+                                    </div>
+                                    <p style="color: #cbd5e1; font-size: 0.9rem; margin-bottom: 8px;">{desc}</p>
+                                    <div style="background: rgba(245, 158, 11, 0.1); border-left: 3px solid #f59e0b; padding: 6px 12px; border-radius: 4px; font-size: 0.82rem; color: #fbbf24; margin-top: 6px;">
+                                        💡 <b>Developer Tip:</b> {tip}
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
+            else:
+                st.info("💡 Type any project description above to generate a tailored 12-category developer recommendation!")
+
+        else:
+            # Full raw feed viewer mode
+            # Retrieve active search query from session state
+            search_query = st.session_state.get("exec_search_input", "")
+
+            # Dynamically filter dataset based on active search query
+            all_categories_data = {}
+            for cat, items in raw_categories_data.items():
+                all_categories_data[cat] = [it for it in items if matches_search(it, search_query)]
+
+            filtered_total_count = sum(len(lst) for lst in all_categories_data.values())
+
+            # ----------------------------------------------------
+            # 2️⃣ Hero Executive Stats Banner (Placed Exactly after Heading at Top)
+            # ----------------------------------------------------
+            active_cats_with_items = [(cat, items) for cat, items in all_categories_data.items() if len(items) > 0]
+            if active_cats_with_items:
+                top_cat_name, top_cat_items = max(active_cats_with_items, key=lambda x: len(x[1]))
+                top_cat_count = len(top_cat_items)
+            else:
+                top_cat_name, top_cat_count = "None", 0
+
+            friendly_kpi_names = {
+                "GitHub Repo": "GitHub Repos",
+                "Hugging Face Model": "Hugging Face",
+                "Hugging Face Dataset": "HF Datasets",
+                "arXiv Research Paper": "arXiv Papers",
+                "PyPI Release": "PyPI Packages",
+                "Corporate Blog": "Tech Blogs",
+                "Medium & Dev Community": "Medium Articles",
+                "Reddit Discussion": "Reddit Topics",
+                "Product Hunt Launch": "Product Hunt",
+                "AI Course": "AI Courses",
+                "YouTube Video": "YouTube Videos",
+                "Prompt & Guardrail Templates": "Prompt Templates",
+                "None": "N/A"
+            }
+            top_display_name = friendly_kpi_names.get(top_cat_name, top_cat_name)
+
+            kpi1, kpi2, kpi3 = st.columns(3)
+            kpi1.metric("📊 All Intelligence Records", f"{filtered_total_count} Items", delta=f"Filtered from {total_raw_count}" if search_query else f"{total_raw_count} total across all scans")
+            kpi2.metric("📡 Active Scanned Sources", f"{len(active_cats_with_items)} Channels")
+            kpi3.metric("🔥 Top Trending Sector", top_display_name, f"{top_cat_count} Items" if top_cat_count > 0 else None)
+
+            st.markdown("---")
+
+            # ----------------------------------------------------
+            # 3️⃣ Executive Visual Analytics (Category Breakdown)
+            # ----------------------------------------------------
+            with st.expander("📊 Executive Visual Analytics (Category Distribution)", expanded=True):
+                import altair as alt
+                chart_data = pd.DataFrame({
+                    "Category": list(all_categories_data.keys()),
+                    "Resources": [len(lst) for lst in all_categories_data.values()]
+                })
                 
-            if st.session_state[page_key] > total_pages:
-                st.session_state[page_key] = 1
+                # Create a vibrant, premium bar chart using Altair
+                chart = alt.Chart(chart_data).mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6).encode(
+                    x=alt.X('Category:N', sort='-y', axis=alt.Axis(labelAngle=-45, title=None, labelFontSize=12)),
+                    y=alt.Y('Resources:Q', title="Total Items", axis=alt.Axis(grid=True, gridOpacity=0.1, labelFontSize=12)),
+                    color=alt.Color('Category:N', legend=None, scale=alt.Scale(scheme='category10')),
+                    tooltip=['Category', 'Resources']
+                ).properties(height=380)
                 
-            current_page = st.session_state[page_key]
+                st.altair_chart(chart, width="stretch")
 
-            # Slice current page items
-            start_idx = (current_page - 1) * items_per_page
-            end_idx = start_idx + items_per_page
-            page_items = items[start_idx:end_idx]
+            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
-            from urllib.parse import urlparse
+            # ----------------------------------------------------
+            # 4️⃣ Compact Search Filter Toolbar (Placed AFTER Visualization)
+            # ----------------------------------------------------
+            filter_col1, filter_col2, filter_col3 = st.columns([2.2, 1.3, 0.5])
+            with filter_col1:
+                def on_search_change():
+                    st.session_state["exec_search_input"] = st.session_state["exec_search_widget"]
 
-            def get_domain(url):
-                try:
-                    netloc = urlparse(url).netloc
-                    return netloc.replace("www.", "") if netloc else "external"
-                except Exception:
-                    return "source link"
+                st.text_input(
+                    "🔍 Executive Keyword Filter",
+                    value=search_query,
+                    placeholder="Search LLM, Agent, DeepSeek, Vision, RAG, Llama...",
+                    key="exec_search_widget",
+                    on_change=on_search_change
+                )
+            
+            with filter_col2:
+                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                export_rows = []
+                for cat, items in all_categories_data.items():
+                    for item in items:
+                        export_rows.append({
+                            "Category": cat,
+                            "Title": item.get("Title", ""),
+                            "Description": item.get("Description", ""),
+                            "Link": item.get("Link", "")
+                        })
+                if export_rows:
+                    df_export = pd.DataFrame(export_rows)
+                    csv_data = df_export.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Briefing (CSV)",
+                        data=csv_data,
+                        file_name="executive_ai_intelligence_report.csv",
+                        mime="text/csv",
+                        width="stretch"
+                    )
 
-            # Render resource cards list
-            card_class = badge_class.replace("badge-", "card-")
-            for item in page_items:
-                link_url = item.get('Link', '#')
-                title_text = item.get('Title', 'Untitled Intelligence')
-                desc_text = item.get('Description', 'No summary provided.')
-                domain_host = get_domain(link_url)
-                timestamp = item.get('Timestamp', '')
+            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+            # ----------------------------------------------------
+            # 5️⃣ Smart Paginated Rendering Helper (Pagination AT BOTTOM)
+            # ----------------------------------------------------
+            def render_paginated_category(category_name, items, badge_class, badge_label, tab_id):
+                if not items:
+                    if search_query:
+                        st.info(f"No {category_name} items match search query '{search_query}'.")
+                    else:
+                        st.info(f"No {category_name} updates available.")
+                    return
+
+                total_filtered = len(items)
+                total_pages = max(1, (total_filtered + items_per_page - 1) // items_per_page)
                 
-                timestamp_html = f'<span style="color: #10b981; font-size: 0.75rem; font-weight: 600; background: rgba(16,185,129,0.1); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(16,185,129,0.2);">🕒 {timestamp}</span>' if timestamp else ''
-                
-                # Safe HTML escaping to prevent string breaks
-                safe_title = title_text.replace('"', '&quot;').replace("'", "&#39;")
-                safe_desc = desc_text.replace('"', '&quot;').replace("'", "&#39;")
+                page_key = f"page_idx_{tab_id}"
+                if page_key not in st.session_state:
+                    st.session_state[page_key] = 1
+                    
+                if st.session_state[page_key] > total_pages:
+                    st.session_state[page_key] = 1
+                    
+                current_page = st.session_state[page_key]
 
-                st.markdown(
-                    f"""
+                # Slice current page items
+                start_idx = (current_page - 1) * items_per_page
+                end_idx = start_idx + items_per_page
+                page_items = items[start_idx:end_idx]
+
+                from urllib.parse import urlparse
+
+                def get_domain(url):
+                    try:
+                        netloc = urlparse(url).netloc
+                        return netloc.replace("www.", "") if netloc else "external"
+                    except Exception:
+                        return "source link"
+
+                # Render resource cards list
+                card_class = badge_class.replace("badge-", "card-")
+                for item in page_items:
+                    link_url = item.get('Link', '#')
+                    title_text = item.get('Title', 'Untitled Intelligence')
+                    desc_text = item.get('Description', 'No summary provided.')
+                    domain_host = get_domain(link_url)
+                    timestamp = item.get('Timestamp', '')
+                    
+                    timestamp_html = f'<span style="color: #10b981; font-size: 0.75rem; font-weight: 600; background: rgba(16,185,129,0.1); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(16,185,129,0.2);">🕒 {timestamp}</span>' if timestamp else ''
+                    
+                    # Safe HTML escaping to prevent string breaks
+                    safe_title = title_text.replace('"', '&quot;').replace("'", "&#39;")
+                    safe_desc = desc_text.replace('"', '&quot;').replace("'", "&#39;")
+
+                    st.markdown(
+                        f"""
 <div class="resource-card {card_class}">
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
 <span class="resource-badge {badge_class}">{badge_label}</span>
@@ -794,72 +899,84 @@ else:
 </div>
 <p class="resource-desc">{desc_text}</p>
 </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+                        """,
+                        unsafe_allow_html=True
+                    )
 
-            # Render Bottom Pagination Bar (Standard Web Application UX)
-            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-            p_col1, p_col2, p_col3 = st.columns([1.5, 3, 1.5])
-            with p_col1:
-                if st.button("⬅️ Previous", key=f"prev_{tab_id}", disabled=(current_page == 1)):
-                    st.session_state[page_key] = max(1, current_page - 1)
-                    st.rerun()
-            with p_col2:
-                st.markdown(
-                    f"<div style='text-align: center; padding-top: 6px; font-weight: 600; color: var(--text-color);'>"
-                    f"Page {current_page} of {total_pages} &nbsp;•&nbsp; ({total_filtered} items)"
-                    f"</div>", 
-                    unsafe_allow_html=True
-                )
-            with p_col3:
-                if st.button("Next ➡️", key=f"next_{tab_id}", disabled=(current_page >= total_pages)):
-                    st.session_state[page_key] = min(total_pages, current_page + 1)
-                    st.rerun()
+                # Render Bottom Pagination Bar (Standard Web Application UX)
+                st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+                p_col1, p_col2, p_col3 = st.columns([1.5, 3, 1.5])
+                with p_col1:
+                    if st.button("⬅️ Previous", key=f"prev_{tab_id}", disabled=(current_page == 1)):
+                        st.session_state[page_key] = max(1, current_page - 1)
+                        st.rerun()
+                with p_col2:
+                    st.markdown(
+                        f"<div style='text-align: center; padding-top: 6px; font-weight: 600; color: var(--text-color);'>"
+                        f"Page {current_page} of {total_pages} &nbsp;•&nbsp; ({total_filtered} items)"
+                        f"</div>", 
+                        unsafe_allow_html=True
+                    )
+                with p_col3:
+                    if st.button("Next ➡️", key=f"next_{tab_id}", disabled=(current_page >= total_pages)):
+                        st.session_state[page_key] = min(total_pages, current_page + 1)
+                        st.rerun()
 
-        # ----------------------------------------------------
-        # 6️⃣ Executive Content Tabs (Dynamic Header Counts)
-        # ----------------------------------------------------
-        f_github = all_categories_data["GitHub Repo"]
-        f_hf = all_categories_data["Hugging Face Model"]
-        f_arxiv = all_categories_data["arXiv Research Paper"]
-        f_pypi = all_categories_data["PyPI Release"]
-        f_blog = all_categories_data["Corporate Blog"]
-        f_reddit = all_categories_data["Reddit Discussion"]
-        f_ph = all_categories_data["Product Hunt Launch"]
-        f_course = all_categories_data["AI Course"]
-        f_yt = all_categories_data["YouTube Video"]
+            # ----------------------------------------------------
+            # 6️⃣ Executive Content Tabs (Dynamic Header Counts)
+            # ----------------------------------------------------
+            f_github = all_categories_data.get("GitHub Repo", [])
+            f_hf = all_categories_data.get("Hugging Face Model", [])
+            f_hf_ds = all_categories_data.get("Hugging Face Dataset", [])
+            f_arxiv = all_categories_data.get("arXiv Research Paper", [])
+            f_pypi = all_categories_data.get("PyPI Release", [])
+            f_blog = all_categories_data.get("Corporate Blog", [])
+            f_medium = all_categories_data.get("Medium & Dev Community", [])
+            f_reddit = all_categories_data.get("Reddit Discussion", [])
+            f_ph = all_categories_data.get("Product Hunt Launch", [])
+            f_course = all_categories_data.get("AI Course", [])
+            f_yt = all_categories_data.get("YouTube Video", [])
+            f_prompt = all_categories_data.get("Prompt & Guardrail Templates", [])
 
-        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
-            f"💻 GitHub ({len(f_github)})", 
-            f"🤗 HF Models ({len(f_hf)})", 
-            f"🔬 arXiv ({len(f_arxiv)})",
-            f"📦 PyPI ({len(f_pypi)})",
-            f"📰 Blogs ({len(f_blog)})",
-            f"💬 Reddit ({len(f_reddit)})",
-            f"🚀 Product Hunt ({len(f_ph)})",
-            f"🎓 Courses ({len(f_course)})",
-            f"📺 Videos ({len(f_yt)})"
-        ])
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
+                f"💻 GitHub ({len(f_github)})", 
+                f"🤗 HF Models ({len(f_hf)})", 
+                f"📊 HF Datasets ({len(f_hf_ds)})", 
+                f"🔬 arXiv ({len(f_arxiv)})",
+                f"📦 PyPI ({len(f_pypi)})",
+                f"📰 Blogs ({len(f_blog)})",
+                f"✍️ Medium/Dev ({len(f_medium)})",
+                f"💬 Reddit ({len(f_reddit)})",
+                f"🚀 ProdHunt ({len(f_ph)})",
+                f"🎓 Courses ({len(f_course)})",
+                f"📺 Videos ({len(f_yt)})",
+                f"🛡️ Prompts ({len(f_prompt)})"
+            ])
 
-        with tab1:
-            render_paginated_category("GitHub Repo", f_github, "badge-github", "GitHub Repo", "tab_gh")
-        with tab2:
-            render_paginated_category("Hugging Face Model", f_hf, "badge-hf", "Hugging Face Model", "tab_hf")
-        with tab3:
-            render_paginated_category("arXiv Research Paper", f_arxiv, "badge-arxiv", "arXiv Research Paper", "tab_arxiv")
-        with tab4:
-            render_paginated_category("PyPI Release", f_pypi, "badge-pypi", "PyPI Release", "tab_pypi")
-        with tab5:
-            render_paginated_category("Corporate Blog", f_blog, "badge-blog", "AI Blog", "tab_blog")
-        with tab6:
-            render_paginated_category("Reddit Discussion", f_reddit, "badge-reddit", "Reddit Discussion", "tab_reddit")
-        with tab7:
-            render_paginated_category("Product Hunt Launch", f_ph, "badge-ph", "Product Hunt Launch", "tab_ph")
-        with tab8:
-            render_paginated_category("AI Course", f_course, "badge-course", "AI Course", "tab_course")
-        with tab9:
-            render_paginated_category("YouTube Video", f_yt, "badge-yt", "YouTube Video", "tab_yt")
+            with tab1:
+                render_paginated_category("GitHub Repo", f_github, "badge-github", "GitHub Repo", "tab_gh")
+            with tab2:
+                render_paginated_category("Hugging Face Model", f_hf, "badge-hf", "Hugging Face Model", "tab_hf")
+            with tab3:
+                render_paginated_category("Hugging Face Dataset", f_hf_ds, "badge-hf", "Hugging Face Dataset", "tab_hf_ds")
+            with tab4:
+                render_paginated_category("arXiv Research Paper", f_arxiv, "badge-arxiv", "arXiv Research Paper", "tab_arxiv")
+            with tab5:
+                render_paginated_category("PyPI Release", f_pypi, "badge-pypi", "PyPI Release", "tab_pypi")
+            with tab6:
+                render_paginated_category("Corporate Blog", f_blog, "badge-blog", "AI Blog", "tab_blog")
+            with tab7:
+                render_paginated_category("Medium & Dev Community", f_medium, "badge-blog", "Medium / Dev", "tab_medium")
+            with tab8:
+                render_paginated_category("Reddit Discussion", f_reddit, "badge-reddit", "Reddit Discussion", "tab_reddit")
+            with tab9:
+                render_paginated_category("Product Hunt Launch", f_ph, "badge-ph", "Product Hunt Launch", "tab_ph")
+            with tab10:
+                render_paginated_category("AI Course", f_course, "badge-course", "AI Course", "tab_course")
+            with tab11:
+                render_paginated_category("YouTube Video", f_yt, "badge-yt", "YouTube Video", "tab_yt")
+            with tab12:
+                render_paginated_category("Prompt & Guardrail Templates", f_prompt, "badge-course", "Prompt Template", "tab_prompt")
     else:
         st.info("💡 The cloud database is currently empty. Click **Fetch New AI Updates** in the sidebar to perform your first sync!")
 

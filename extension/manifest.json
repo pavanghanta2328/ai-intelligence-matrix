@@ -4,6 +4,11 @@
   "version": "1.0.0",
   "description": "Scans and tracks the newest AI releases, models, research papers, packages, and discussions.",
   "permissions": [],
+  "host_permissions": [
+    "https://ai-intelligence-matrix.streamlit.app/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Enterprise AI Discovery Hub"

@@ -405,6 +405,218 @@ def get_youtube_updates():
             videos.extend(batch)
     return videos
 
+# 10. Fetch Hugging Face Datasets
+def get_huggingface_dataset_updates():
+    url = "https://huggingface.co/api/datasets?sort=lastModified&direction=-1&limit=50"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    datasets = []
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            for item in data:
+                ds_id = item.get('id', '')
+                if ds_id:
+                    datasets.append({
+                        "Type": "Hugging Face Dataset",
+                        "Title": ds_id,
+                        "Description": f"Author: {item.get('author', 'Unknown')} | Downloads: {item.get('downloads', 0)} | Likes: {item.get('likes', 0)}",
+                        "Link": f"https://huggingface.co/datasets/{ds_id}",
+                        "Timestamp": time_ago(item.get('lastModified', ''))
+                    })
+    except Exception as e:
+        print(f"Error fetching Hugging Face Datasets: {e}")
+    return datasets
+
+# 11. Fetch Medium & Developer Community Articles (Medium, Dev.to, Hashnode, Hacker News)
+def get_medium_dev_community_updates():
+    articles = []
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    
+    # 1. Dev.to API (Multi-discipline developer tags)
+    for tag in ["ai", "webdev", "devops", "testing", "python"]:
+        try:
+            res = requests.get(f"https://dev.to/api/articles?tag={tag}&per_page=5", headers=headers, timeout=5)
+            if res.status_code == 200:
+                for a in res.json():
+                    articles.append({
+                        "Type": "Medium & Dev Community",
+                        "Title": f"[DEV.TO / {tag.upper()}] {a.get('title', '')}",
+                        "Description": a.get('description', '') or "Developer community engineering post.",
+                        "Link": a.get('url', '#'),
+                        "Timestamp": time_ago(a.get('published_at', ''))
+                    })
+        except:
+            pass
+        
+    # 2. Medium Tech RSS Feeds
+    medium_feeds = [
+        ("Towards Data Science", "https://medium.com/feed/towards-data-science"),
+        ("Towards AI", "https://medium.com/feed/towards-artificial-intelligence"),
+        ("ITNEXT", "https://medium.com/feed/itnext")
+    ]
+    for source_name, feed_url in medium_feeds:
+        try:
+            r = requests.get(feed_url, headers=headers, timeout=5)
+            if r.status_code == 200:
+                parsed = feedparser.parse(r.content)
+                for entry in parsed.entries[:5]:
+                    articles.append({
+                        "Type": "Medium & Dev Community",
+                        "Title": f"[{source_name.upper()}] {entry.get('title', '')}",
+                        "Description": (entry.get('summary', '') or "Tech engineering guide")[:250] + "...",
+                        "Link": entry.get('link', '#'),
+                        "Timestamp": time_ago(entry.get('published', ''))
+                    })
+        except:
+            pass
+            
+    return articles
+
+# 12. Fetch System Prompt & Guardrail Templates dynamically from GitHub API
+def get_prompt_template_updates():
+    templates = []
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    url = "https://api.github.com/search/repositories?q=prompt+guardrail+system-prompt+sort:updated&per_page=15"
+    try:
+        res = requests.get(url, headers=headers, timeout=8)
+        if res.status_code == 200:
+            for item in res.json().get('items', []):
+                templates.append({
+                    "Type": "Prompt & Guardrail Templates",
+                    "Title": f"[PROMPT / GUARDRAIL] {item.get('name', 'Template')}",
+                    "Description": item.get('description') or "Production system prompt repository or safety guardrail specification.",
+                    "Link": item.get('html_url', '#'),
+                    "Timestamp": time_ago(item.get('updated_at', ''))
+                })
+    except Exception as e:
+        print(f"Error fetching dynamic prompt templates: {e}")
+    return templates
+
+# Live Fallback Handler for ALL 12 categories dynamically
+def fetch_live_category_fallback(category_name, query=""):
+    import urllib.parse
+    q_str = urllib.parse.quote_plus(query) if query else "ai"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    results = []
+    
+    try:
+        if category_name == "GitHub Repo":
+            url = f"https://api.github.com/search/repositories?q={q_str}+sort:updated&per_page=10"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code == 200:
+                for item in res.json().get('items', []):
+                    results.append({
+                        "Type": "GitHub Repo",
+                        "Title": item.get('name', 'Unknown'),
+                        "Description": item.get('description') or "No description provided.",
+                        "Link": item.get('html_url', '#'),
+                        "Timestamp": time_ago(item.get('updated_at', ''))
+                    })
+        elif category_name == "Hugging Face Model":
+            url = f"https://huggingface.co/api/models?search={q_str}&sort=lastModified&direction=-1&limit=10"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code == 200:
+                for m in res.json():
+                    results.append({
+                        "Type": "Hugging Face Model",
+                        "Title": m.get('id', ''),
+                        "Description": f"Author: {m.get('author', 'Unknown')} | Downloads: {m.get('downloads', 0)}",
+                        "Link": f"https://huggingface.co/{m.get('id', '')}",
+                        "Timestamp": time_ago(m.get('lastModified', ''))
+                    })
+        elif category_name == "Hugging Face Dataset":
+            url = f"https://huggingface.co/api/datasets?search={q_str}&sort=lastModified&direction=-1&limit=10"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code == 200:
+                for d in res.json():
+                    results.append({
+                        "Type": "Hugging Face Dataset",
+                        "Title": d.get('id', ''),
+                        "Description": f"Author: {d.get('author', 'Unknown')} | Downloads: {d.get('downloads', 0)}",
+                        "Link": f"https://huggingface.co/datasets/{d.get('id', '')}",
+                        "Timestamp": time_ago(d.get('lastModified', ''))
+                    })
+        elif category_name == "arXiv Research Paper":
+            url = f"http://export.arxiv.org/api/query?search_query=all:{q_str}&start=0&max_results=10"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code == 200:
+                parsed = feedparser.parse(res.content)
+                for entry in parsed.entries:
+                    results.append({
+                        "Type": "arXiv Research Paper",
+                        "Title": entry.get('title', '').replace('\n', ' '),
+                        "Description": entry.get('summary', '').replace('\n', ' ')[:250] + "...",
+                        "Link": entry.get('link', '#'),
+                        "Timestamp": time_ago(entry.get('published', ''))
+                    })
+        elif category_name == "PyPI Release":
+            url = f"https://pypi.org/pypi?%3Aaction=search&term={q_str}"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code == 200:
+                titles = re.findall(r'<span class="package-snippet__name">(.*?)</span>', res.text)
+                descs = re.findall(r'<p class="package-snippet__description">(.*?)</p>', res.text)
+                for i in range(min(len(titles), 10)):
+                    name = titles[i].strip()
+                    desc_text = descs[i].strip() if i < len(descs) else "Python library on PyPI."
+                    results.append({
+                        "Type": "PyPI Release",
+                        "Title": name,
+                        "Description": desc_text,
+                        "Link": f"https://pypi.org/project/{name}/",
+                        "Timestamp": "Recent Release"
+                    })
+        elif category_name == "Corporate Blog":
+            return get_blog_updates()
+        elif category_name == "Medium & Dev Community":
+            url = f"https://dev.to/api/articles?tag={q_str}&per_page=10"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code == 200:
+                for a in res.json():
+                    results.append({
+                        "Type": "Medium & Dev Community",
+                        "Title": f"[DEV.TO] {a.get('title', '')}",
+                        "Description": a.get('description', '') or "Developer community article.",
+                        "Link": a.get('url', '#'),
+                        "Timestamp": time_ago(a.get('published_at', ''))
+                    })
+        elif category_name == "Reddit Discussion":
+            url = f"https://www.reddit.com/search.json?q={q_str}&sort=new&limit=10"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code == 200:
+                data = res.json().get('data', {}).get('children', [])
+                for child in data:
+                    d = child.get('data', {})
+                    results.append({
+                        "Type": "Reddit Discussion",
+                        "Title": f"[r/{d.get('subreddit', 'all')}] {d.get('title', '')}",
+                        "Description": (d.get('selftext', '') or "Reddit community discussion.")[:250] + "...",
+                        "Link": f"https://www.reddit.com{d.get('permalink', '')}",
+                        "Timestamp": time_ago(pd.to_datetime(d.get('created_utc', 0), unit='s').isoformat())
+                    })
+        elif category_name == "Product Hunt Launch":
+            return get_producthunt_updates()
+        elif category_name == "AI Course":
+            return get_course_updates()
+        elif category_name == "YouTube Video":
+            return get_youtube_updates()
+        elif category_name == "Prompt & Guardrail Templates":
+            url = f"https://api.github.com/search/repositories?q={q_str}+prompt+guardrail+sort:updated&per_page=10"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code == 200:
+                for item in res.json().get('items', []):
+                    results.append({
+                        "Type": "Prompt & Guardrail Templates",
+                        "Title": f"[GUARDRAIL / PROMPT] {item.get('name', '')}",
+                        "Description": item.get('description') or "System prompt & guardrail template repository.",
+                        "Link": item.get('html_url', '#'),
+                        "Timestamp": time_ago(item.get('updated_at', ''))
+                    })
+    except Exception as e:
+        print(f"Error fetching live fallback for {category_name}: {e}")
+        
+    return results
+
 # ----------------------------------------------------
 # 🔍 Direct Link Metadata Enricher (Crawls actual page title/meta description)
 # ----------------------------------------------------
@@ -609,3 +821,57 @@ def clear_mongo_db(client):
     except Exception as e:
         print(f"Error dropping database collection: {e}")
         return False
+
+ALL_12_CATEGORIES = [
+    "GitHub Repo",
+    "Hugging Face Model",
+    "Hugging Face Dataset",
+    "arXiv Research Paper",
+    "PyPI Release",
+    "Corporate Blog",
+    "Medium & Dev Community",
+    "Reddit Discussion",
+    "Product Hunt Launch",
+    "AI Course",
+    "YouTube Video",
+    "Prompt & Guardrail Templates"
+]
+
+def fetch_all_updates_dict(client=None):
+    data = {}
+    if client:
+        try:
+            for cat in ALL_12_CATEGORIES:
+                items = get_persisted_updates_from_mongo(client, cat)
+                if items:
+                    data[cat] = items
+        except Exception as e:
+            print(f"Error fetching persisted data: {e}")
+            
+    # Live fallback if data is incomplete or client is None
+    if not data:
+        data = {
+            "GitHub Repo": get_github_ai_updates(),
+            "Hugging Face Model": get_huggingface_updates(),
+            "Hugging Face Dataset": get_huggingface_dataset_updates(),
+            "arXiv Research Paper": get_arxiv_updates(),
+            "PyPI Release": get_pypi_updates(),
+            "Corporate Blog": get_blog_updates(),
+            "Medium & Dev Community": get_medium_dev_community_updates(),
+            "Reddit Discussion": get_reddit_updates(),
+            "Product Hunt Launch": get_producthunt_updates(),
+            "AI Course": get_course_updates(),
+            "YouTube Video": get_youtube_updates(),
+            "Prompt & Guardrail Templates": get_prompt_template_updates()
+        }
+    else:
+        # Fill missing keys if any
+        if "Hugging Face Dataset" not in data:
+            data["Hugging Face Dataset"] = get_huggingface_dataset_updates()
+        if "Medium & Dev Community" not in data:
+            data["Medium & Dev Community"] = get_medium_dev_community_updates()
+        if "Prompt & Guardrail Templates" not in data:
+            data["Prompt & Guardrail Templates"] = get_prompt_template_updates()
+            
+    return data
+
