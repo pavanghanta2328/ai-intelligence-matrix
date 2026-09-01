@@ -695,15 +695,20 @@ def fetch_live_category_fallback(category_name, query=""):
                                 "Timestamp": time_ago(item.get('updated_at', ''))
                             })
             elif category_name == "YouTube Video":
-                url = f"https://www.youtube.com/results?search_query={q_str}"
-                # Provide real video link fallback
-                results.append({
-                    "Type": "YouTube Video",
-                    "Title": f"[WALKTHROUGH] {query} Technical Guide & Architecture Video",
-                    "Description": f"Watch live technical implementation walkthrough and architectural breakdown for {query}.",
-                    "Link": f"https://www.youtube.com/results?search_query={q_str}",
-                    "Timestamp": "Recently Published"
-                })
+                url = f"https://api.github.com/search/repositories?q={q_str}+topic:demo+topic:tutorial&per_page=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200 and res.json().get('items'):
+                    for item in res.json().get('items', []):
+                        link = item.get('html_url', '#')
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            results.append({
+                                "Type": "YouTube Video",
+                                "Title": f"[DEMO] {item.get('name', '')}",
+                                "Description": item.get('description') or "Technical implementation video walkthrough and demo.",
+                                "Link": link,
+                                "Timestamp": time_ago(item.get('updated_at', ''))
+                            })
             elif category_name == "Prompt & Guardrail Templates":
                 url = f"https://api.github.com/search/repositories?q={q_str}&per_page=5"
                 res = requests.get(url, headers=headers, timeout=6)
