@@ -236,7 +236,8 @@ class UniversalMultiRoleMatcher:
             
             for item in cat_items:
                 score, matched_kw, tip = self.score_item(item, keywords, subject_anchor)
-                if score > 0:
+                # Only include items that meet the minimum relevance threshold (>= 15.0%)
+                if score >= 15.0:
                     item_copy = dict(item)
                     item_copy["MatchScore"] = score
                     item_copy["MatchedKeywords"] = matched_kw

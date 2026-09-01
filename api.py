@@ -197,14 +197,17 @@ def recommend_updates(req: RecommendationRequest):
             if live_items:
                 scored_items = []
                 for item in live_items:
-                    score, matched_kw, tip = scenario_matcher.score_item(item, result["keywords"])
-                    item_copy = dict(item)
-                    item_copy["MatchScore"] = max(score, 65.0) if score > 0 else 70.0
-                    item_copy["MatchedKeywords"] = matched_kw or result["keywords"][:2]
-                    item_copy["IntegrationTip"] = tip
-                    scored_items.append(item_copy)
-                if scored_items:
-                    result["recommendations"][cat] = scored_items[:req.top_k]
+                    score, matched_kw, tip = scenario_matcher.score_item(item, result["keywords"], result.get("subject_anchor", ""))
+                    # Only include items that meet the minimum relevance threshold (>= 20%)
+                    if score >= 20.0:
+                        item_copy = dict(item)
+                        item_copy["MatchScore"] = score
+                        item_copy["MatchedKeywords"] = matched_kw
+                        item_copy["IntegrationTip"] = tip
+                        scored_items.append(item_copy)
+                
+                scored_items.sort(key=lambda x: x["MatchScore"], reverse=True)
+                result["recommendations"][cat] = scored_items[:req.top_k]
                     
         return result
     except Exception as e:
