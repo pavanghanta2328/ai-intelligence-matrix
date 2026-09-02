@@ -716,7 +716,7 @@ def fetch_live_category_fallback(category_name, query=""):
                                 "Timestamp": time_ago(item.get('updated_at', ''))
                             })
             elif category_name == "Prompt & Guardrail Templates":
-                url = f"https://api.github.com/search/repositories?q={q_str}&per_page=5"
+                url = f"https://api.github.com/search/repositories?q={q_str}+guardrail+prompt&per_page=5"
                 res = requests.get(url, headers=headers, timeout=6)
                 if res.status_code == 200:
                     for item in res.json().get('items', []):
