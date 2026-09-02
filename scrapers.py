@@ -612,14 +612,20 @@ def fetch_live_category_fallback(category_name, query=""):
                                 "Timestamp": time_ago(pub)
                             })
             elif category_name == "PyPI Release":
+                primary_term = q_str.split('+')[0]
+                url = f"https://api.github.com/search/repositories?q={primary_term}+pypi&per_page=5"
+                res = requests.get(url, headers=headers, timeout=6)
+                if res.status_code == 200:
+                    for item in res.json().get('items', []):
+                        link = item.get('html_url', '#')
+                        if link not in seen_links:
                             seen_links.add(link)
-                            desc_text = descs[i].strip() if i < len(descs) else "Python library on PyPI."
                             results.append({
                                 "Type": "PyPI Release",
-                                "Title": name,
-                                "Description": desc_text,
+                                "Title": item.get('name', ''),
+                                "Description": item.get('description') or "Python library package on PyPI.",
                                 "Link": link,
-                                "Timestamp": "Recent Release"
+                                "Timestamp": time_ago(item.get('updated_at', ''))
                             })
             elif category_name == "Corporate Blog":
                 url = f"https://dev.to/api/articles?tag={q_str}&per_page=5"
