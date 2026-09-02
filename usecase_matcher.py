@@ -328,7 +328,7 @@ class UniversalMultiRoleMatcher:
     def generate_role_tip(self, item, matched_keywords):
         cat = item.get("Type", "")
         clean_kw = [k for k in matched_keywords if k not in ENGLISH_STOPWORDS]
-        matched_str = ", ".join(clean_kw[:3]) if clean_kw else "architecture requirement"
+        matched_str = ", ".join(clean_kw[:3]) if clean_kw else "core technical requirements"
         
         if cat == "GitHub Repo":
             return f"Clone and integrate modular repository components for [{matched_str}]."
