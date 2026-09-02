@@ -618,7 +618,7 @@ def fetch_live_category_fallback(category_name, query=""):
                     for item in res.json().get('items', []):
                         repo_name = item.get('name', '')
                         repo_desc = item.get('description') or ""
-                        repo_url = item.get('html_url', '').lower()
+                        repo_url = (item.get('html_url') or '').lower().strip()
                         # Verify whether candidate corresponds to an authentic published package on PyPI
                         pypi_url = f"https://pypi.org/pypi/{repo_name}/json"
                         try:
@@ -628,13 +628,17 @@ def fetch_live_category_fallback(category_name, query=""):
                                 pkg_name = info.get('name', repo_name)
                                 p_link = f"https://pypi.org/project/{pkg_name}/"
                                 
-                                # Verification Check: Ensure PyPI package project_urls or homepage matches GitHub repo context
+                                # Airtight Verification Check: Ensure PyPI package project_urls or homepage links back to THIS EXACT GitHub repo URL or exact package name match
                                 proj_urls = str(info.get('project_urls') or {}).lower()
                                 home_page = str(info.get('home_page') or "").lower()
                                 combined_pypi_urls = f"{proj_urls} {home_page}"
                                 
-                                # Accept if repo name matches or project_urls link to github
-                                if p_link not in seen_links and ("github.com" in combined_pypi_urls or repo_name.lower() in pkg_name.lower() or pkg_name.lower() in repo_name.lower()):
+                                is_exact_match = (
+                                    (repo_url and repo_url in combined_pypi_urls) or
+                                    (repo_name.lower() == pkg_name.lower())
+                                )
+                                
+                                if p_link not in seen_links and is_exact_match:
                                     seen_links.add(p_link)
                                     pkg_version = info.get('version', '')
                                     pypi_sum = info.get('summary', '').strip()
