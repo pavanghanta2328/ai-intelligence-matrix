@@ -496,36 +496,30 @@ def get_prompt_template_updates():
 def extract_fallback_subqueries(query_text, category_name=""):
     if not query_text:
         return ["ai"]
-    from usecase_matcher import ENGLISH_STOPWORDS, scenario_matcher
+    from usecase_matcher import ENGLISH_STOPWORDS, ACTION_VERB_STOPLIST, scenario_matcher
     
     # 1. Dynamically extract the Primary Subject Anchor from scenario text
     subject_anchor = scenario_matcher.extract_subject_anchor(query_text)
     
     # 2. Extract Action Clauses & Modifiers
-    clauses = re.split(r'[,;\.\n]| and | that | with | for ', query_text.lower())
-    generic_unigrams = {"ai", "driven", "data", "web", "online", "tool", "system", "app", "application", "thought", "think", "build", "using", "create", "looking", "help", "need", "want"}
+    clauses = re.split(r'[,;\.\n]| and | that | with | for | to | by | from | of | based on | using | via ', query_text.lower())
+    generic_unigrams = {"ai", "driven", "data", "web", "online", "tool", "system", "app", "application", "thought", "thouight", "think", "build", "using", "create", "looking", "help", "need", "want"}
     
     subqueries = []
-    anchor_clean = ""
     
     if subject_anchor:
-        anchor_clean = "+".join([w for w in subject_anchor.split() if w not in ENGLISH_STOPWORDS and w not in generic_unigrams])
+        anchor_clean = "+".join([w for w in subject_anchor.split() if w not in ENGLISH_STOPWORDS and w not in generic_unigrams][:2])
         if anchor_clean:
             subqueries.append(anchor_clean)
             
     for clause in clauses:
-        words = [w.strip() for w in re.findall(r'\b[a-zA-Z0-9\-]+\b', clause) if w.strip() not in ENGLISH_STOPWORDS and w.strip() not in generic_unigrams and len(w.strip()) > 2]
+        words = [w.strip() for w in re.findall(r'\b[a-zA-Z0-9\-]+\b', clause) if w.strip() not in ENGLISH_STOPWORDS and w.strip() not in ACTION_VERB_STOPLIST and w.strip() not in generic_unigrams and len(w.strip()) > 2]
         if words:
             phrase_str = "+".join(words[:2])
-            if anchor_clean and anchor_clean not in phrase_str:
-                anchored_query = f"{anchor_clean}+{phrase_str}"
-            else:
-                anchored_query = phrase_str
+            if phrase_str and phrase_str not in subqueries:
+                subqueries.append(phrase_str)
                 
-            if anchored_query and anchored_query not in subqueries:
-                subqueries.append(anchored_query)
-                
-    return subqueries[:3] or ["ai"]
+    return subqueries[:4] or ["ai"]
 
 # Live Fallback Handler for ALL 12 categories dynamically
 def fetch_live_category_fallback(category_name, query=""):
