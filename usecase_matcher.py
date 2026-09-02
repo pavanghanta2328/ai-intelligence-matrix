@@ -39,7 +39,7 @@ ENGLISH_STOPWORDS = {
 ACTION_VERB_STOPLIST = {
     "build", "building", "create", "creating", "design", "designing",
     "implement", "implementing", "develop", "developing", "make", "making",
-    "construct", "constructing", "want", "need", "help", "thought", "think",
+    "construct", "constructing", "want", "need", "help", "thought", "thouight", "thougth", "think",
     "looking", "find", "provide", "run", "running", "set", "setting"
 }
 
