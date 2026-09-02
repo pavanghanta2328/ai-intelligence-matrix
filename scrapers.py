@@ -613,20 +613,31 @@ def fetch_live_category_fallback(category_name, query=""):
                             })
             elif category_name == "PyPI Release":
                 primary_term = q_str.split('+')[0]
-                url = f"https://api.github.com/search/repositories?q={primary_term}+pypi&per_page=5"
+                url = f"https://api.github.com/search/repositories?q={primary_term}+pypi&per_page=10"
                 res = requests.get(url, headers=headers, timeout=6)
                 if res.status_code == 200:
                     for item in res.json().get('items', []):
-                        link = item.get('html_url', '#')
-                        if link not in seen_links:
-                            seen_links.add(link)
-                            results.append({
-                                "Type": "PyPI Release",
-                                "Title": item.get('name', ''),
-                                "Description": item.get('description') or "Python library package on PyPI.",
-                                "Link": link,
-                                "Timestamp": time_ago(item.get('updated_at', ''))
-                            })
+                        repo_name = item.get('name', '')
+                        # Verify whether candidate corresponds to an authentic published package on PyPI
+                        pypi_url = f"https://pypi.org/pypi/{repo_name}/json"
+                        try:
+                            p_res = requests.get(pypi_url, headers=headers, timeout=3)
+                            if p_res.status_code == 200:
+                                info = p_res.json().get('info', {})
+                                pkg_name = info.get('name', repo_name)
+                                p_link = f"https://pypi.org/project/{pkg_name}/"
+                                if p_link not in seen_links:
+                                    seen_links.add(p_link)
+                                    pkg_version = info.get('version', '')
+                                    results.append({
+                                        "Type": "PyPI Release",
+                                        "Title": f"{pkg_name} {pkg_version}".strip(),
+                                        "Description": info.get('summary') or item.get('description') or "Python package published on PyPI.",
+                                        "Link": p_link,
+                                        "Timestamp": "PyPI Release"
+                                    })
+                        except Exception:
+                            continue
             elif category_name == "Corporate Blog":
                 url = f"https://dev.to/api/articles?tag={q_str}&per_page=5"
                 res = requests.get(url, headers=headers, timeout=6)
