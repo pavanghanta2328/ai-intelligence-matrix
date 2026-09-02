@@ -538,7 +538,8 @@ def fetch_live_category_fallback(category_name, query=""):
     try:
         for q_str in subqueries:
             if category_name == "GitHub Repo":
-                url = f"https://api.github.com/search/repositories?q={q_str}&sort=stars&per_page=5"
+                # Relevance-based search (no sort=stars bias)
+                url = f"https://api.github.com/search/repositories?q={q_str}&per_page=5"
                 res = requests.get(url, headers=headers, timeout=6)
                 if res.status_code == 200:
                     for item in res.json().get('items', []):
@@ -583,31 +584,31 @@ def fetch_live_category_fallback(category_name, query=""):
                                 "Timestamp": time_ago(d.get('lastModified', ''))
                             })
             elif category_name == "arXiv Research Paper":
-                url = f"http://export.arxiv.org/api/query?search_query=all:{q_str}&start=0&max_results=5"
+                url = f"https://export.arxiv.org/api/query?search_query=all:{q_str}&start=0&max_results=5"
                 res = requests.get(url, headers=headers, timeout=6)
                 if res.status_code == 200:
-                    parsed = feedparser.parse(res.content)
-                    for entry in parsed.entries:
-                        link = entry.get('link', '#')
+                    entries = re.findall(r'<entry>(.*?)</entry>', res.text, re.DOTALL)
+                    for entry in entries:
+                        t_m = re.search(r'<title>(.*?)</title>', entry, re.DOTALL)
+                        l_m = re.search(r'<id>(.*?)</id>', entry, re.DOTALL)
+                        d_m = re.search(r'<summary>(.*?)</summary>', entry, re.DOTALL)
+                        p_m = re.search(r'<published>(.*?)</published>', entry, re.DOTALL)
+                        
+                        title = re.sub(r'\s+', ' ', t_m.group(1)).strip() if t_m else "Research Paper"
+                        link = l_m.group(1).strip() if l_m else "#"
+                        desc = re.sub(r'\s+', ' ', d_m.group(1)).strip() if d_m else "No abstract available."
+                        pub = p_m.group(1).strip() if p_m else ""
+                        
                         if link not in seen_links:
                             seen_links.add(link)
                             results.append({
                                 "Type": "arXiv Research Paper",
-                                "Title": entry.get('title', '').replace('\n', ' '),
-                                "Description": entry.get('summary', '').replace('\n', ' ')[:250] + "...",
+                                "Title": title,
+                                "Description": desc[:250] + "..." if len(desc) > 250 else desc,
                                 "Link": link,
-                                "Timestamp": time_ago(entry.get('published', ''))
+                                "Timestamp": time_ago(pub)
                             })
             elif category_name == "PyPI Release":
-                url = f"https://pypi.org/pypi?%3Aaction=search&term={q_str}"
-                res = requests.get(url, headers=headers, timeout=6)
-                if res.status_code == 200:
-                    titles = re.findall(r'<span class="package-snippet__name">(.*?)</span>', res.text)
-                    descs = re.findall(r'<p class="package-snippet__description">(.*?)</p>', res.text)
-                    for i in range(min(len(titles), 5)):
-                        name = titles[i].strip()
-                        link = f"https://pypi.org/project/{name}/"
-                        if link not in seen_links:
                             seen_links.add(link)
                             desc_text = descs[i].strip() if i < len(descs) else "Python library on PyPI."
                             results.append({

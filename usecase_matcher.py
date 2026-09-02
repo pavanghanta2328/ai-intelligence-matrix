@@ -32,14 +32,35 @@ ENGLISH_STOPWORDS = {
     "then", "once", "here", "there", "when", "where", "why", "how", "all", "any",
     "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor",
     "not", "only", "own", "same", "so", "than", "too", "very", "can", "will",
-    "just", "don", "should", "now", "requirement", "requirements", "project",
-    "system", "app", "application", "scenario", "solution", "tool", "tools",
-    "working", "create", "using", "use", "case", "looking", "find", "provide",
-    "list", "recommended", "recommendation", "recommendations", "required",
-    "platform", "help", "this", "that", "our", "my", "your", "its", "it",
-    "enterprise", "architecture", "infrastructure", "stack", "best", "top", "new",
-    "thought", "think", "thinking", "wanted", "trying", "idea", "please", "way", "based"
+    "just", "don", "should", "now", "working", "use", "case", "looking", "find",
+    "this", "that", "our", "my", "your", "its", "it", "wanted", "trying", "idea", "please", "way"
 }
+
+ACTION_VERB_STOPLIST = {
+    "build", "building", "create", "creating", "design", "designing",
+    "implement", "implementing", "develop", "developing", "make", "making",
+    "construct", "constructing", "want", "need", "help", "thought", "think",
+    "looking", "find", "provide", "run", "running", "set", "setting"
+}
+
+GENERIC_CONTAINER_NOUNS = {
+    "system", "systems", "pipeline", "pipelines", "engine", "engines",
+    "platform", "platforms", "framework", "frameworks", "tool", "tools",
+    "service", "services", "application", "applications", "solution", "solutions"
+}
+
+def clean_technical_tokens(words, filter_container_nouns=True):
+    cleaned = []
+    for w in words:
+        w_lower = w.strip().lower()
+        if len(w_lower) <= 2:
+            continue
+        if w_lower in ENGLISH_STOPWORDS or w_lower in ACTION_VERB_STOPLIST:
+            continue
+        if filter_container_nouns and w_lower in GENERIC_CONTAINER_NOUNS:
+            continue
+        cleaned.append(w_lower)
+    return cleaned
 
 def load_synonyms():
     synonyms_map = {}
@@ -64,74 +85,162 @@ class UniversalMultiRoleMatcher:
 
     def extract_keywords(self, text):
         """
-        Extracts technical unigrams, bigrams, and trigrams from raw text,
-        filtering out generic English stopwords to prevent low-relevance noise.
+        Extracts unigrams, bigrams, and trigrams strictly WITHIN each natural clause boundary,
+        preventing cross-clause junk bigrams (e.g. 'safety assigns', 'solvers based').
         """
         if not text:
             return []
         
-        raw_text = text.lower()
-        cleaned = re.sub(r'[^a-z0-9\s\-\+\#\.]', ' ', raw_text)
-        raw_tokens = [w.strip() for w in cleaned.split() if len(w.strip()) > 1]
+        # Split text into natural clauses at expanded conjunctions & prepositions
+        clauses = re.split(r'[,;\.\n]| and | that | with | for | to | by | from | of | based on | based upon | using | via | through | in order to ', text.lower())
         
-        # Meaningful tokens (excluding English stopwords)
-        meaningful_unigrams = [w for w in raw_tokens if w not in ENGLISH_STOPWORDS and len(w) > 2]
+        extracted = set()
         
-        extracted = set(meaningful_unigrams)
-        
-        # Dynamic n-gram generation (bigrams & trigrams from meaningful sequences)
-        for i in range(len(raw_tokens) - 1):
-            w1, w2 = raw_tokens[i], raw_tokens[i+1]
-            if w1 not in ENGLISH_STOPWORDS or w2 not in ENGLISH_STOPWORDS:
-                if len(w1) > 1 and len(w2) > 1:
-                    extracted.add(f"{w1} {w2}")
-                    
-        for i in range(len(raw_tokens) - 2):
-            w1, w2, w3 = raw_tokens[i], raw_tokens[i+1], raw_tokens[i+2]
-            if any(w not in ENGLISH_STOPWORDS for w in [w1, w2, w3]):
-                extracted.add(f"{w1} {w2} {w3}")
+        for clause in clauses:
+            raw_tokens = re.findall(r'\b[a-zA-Z0-9\-]+\b', clause)
+            clause_tokens = clean_technical_tokens(raw_tokens, filter_container_nouns=True)
+            
+            # Add clean unigrams from this clause
+            for token in clause_tokens:
+                extracted.add(token)
+                
+            # Dynamic N-gram generation strictly WITHIN this clause
+            for i in range(len(clause_tokens) - 1):
+                extracted.add(f"{clause_tokens[i]} {clause_tokens[i+1]}")
+                
+            for i in range(len(clause_tokens) - 2):
+                extracted.add(f"{clause_tokens[i]} {clause_tokens[i+1]} {clause_tokens[i+2]}")
 
-        # Dynamic synonym expansion
-        final_terms = set(extracted)
-        for token in meaningful_unigrams:
-            for canonical, aliases in self.synonyms.items():
-                if token == canonical or token in aliases:
-                    final_terms.add(canonical)
-                    for a in aliases[:3]:
-                        if len(a) > 2:
-                            final_terms.add(a)
+        return list(extracted)
 
-        return list(final_terms)
+    def score_anchor_candidate(self, candidate):
+        """
+        Scores candidate phrases to prioritize core technical domain subjects (multi-word compounds,
+        hyphenated terms) over generic preamble phrases or single-word fragments.
+        """
+        cand_lower = candidate.lower()
+        
+        # Clean leading action verbs if present (e.g. 'evaluates multi-agent' -> 'multi-agent')
+        words = [w for w in cand_lower.split() if w not in ACTION_VERB_STOPLIST and w not in {"evaluates", "assigns", "benchmarks", "validates"}]
+        cand_clean = " ".join(words)
+        
+        # Multi-word compound length score (25.0 points per word)
+        score = len(words) * 25.0
+        
+        # Hyphen bonus acts as a tiebreaker (+10.0), NOT an override that beats longer multi-word phrases
+        if "-" in cand_clean:
+            score += 10.0
+            
+        # Heavy penalty for generic preamble words
+        preamble_words = {"ai-driven", "data science", "general", "basic", "simple", "standard", "custom", "overview"}
+        for pw in preamble_words:
+            if pw in cand_clean:
+                score -= 40.0
+                
+        return score
 
     def extract_subject_anchor(self, text):
         """
-        Dynamically extracts the core technical Subject Anchor (the primary compound noun phrase)
-        from raw prompt text without using any hardcoded domain lists.
+        Extracts the highest-scoring technical Subject Anchor across all clauses in the prompt,
+        skipping generic preamble clauses.
         """
         if not text:
             return ""
         
-        # Split text into natural language clauses
-        clauses = re.split(r'[,;\.\n]| and | that | with | for ', text.lower())
-        
+        # Expanded clause boundary delimiters including prepositions (to, for, by, from, of)
+        clauses = re.split(r'[,;\.\n]| and | that | with | for | to | by | from | of | based on | based upon | using | via | through | in order to ', text.lower())
         candidates = []
+        
         for clause in clauses:
-            words = [w.strip() for w in re.findall(r'\b[a-zA-Z0-9\-]+\b', clause) if w.strip() not in ENGLISH_STOPWORDS and len(w.strip()) > 2]
-            if len(words) >= 2:
-                candidates.append(" ".join(words[:3]))
-            elif len(words) == 1:
-                candidates.append(words[0])
+            raw_words = re.findall(r'\b[a-zA-Z0-9\-]+\b', clause)
+            all_words = clean_technical_tokens(raw_words, filter_container_nouns=False)
+            cleaned_words = clean_technical_tokens(raw_words, filter_container_nouns=True)
+            
+            # Clean action verbs from candidate anchor
+            cleaned_words_no_verbs = [w for w in cleaned_words if w not in {"evaluates", "assigns", "benchmarks", "validates"}]
+            
+            if len(cleaned_words_no_verbs) >= 2:
+                candidates.append(" ".join(cleaned_words_no_verbs[:3]))
+            elif len(cleaned_words) >= 2:
+                candidates.append(" ".join(cleaned_words[:3]))
+            elif len(all_words) >= 1:
+                candidates.append(" ".join(all_words[:2]))
                 
         if candidates:
-            # Prioritize compound technical phrases as the primary subject anchor
-            candidates.sort(key=lambda x: (len(x.split()), len(x)), reverse=True)
+            # Score all candidates across the prompt and select the highest-scoring technical anchor
+            candidates.sort(key=lambda x: (self.score_anchor_candidate(x), len(x.split()), len(x)), reverse=True)
             return candidates[0]
         return ""
 
+    def get_anchor_synonyms(self, anchor):
+        """
+        Dynamically generates canonical spelling variants & hyphen variations for any anchor
+        without any hardcoded domain terms.
+        """
+        if not anchor:
+            return []
+        anchor_clean = anchor.lower().strip()
+        syns = {anchor_clean}
+        
+        # 1. Hyphen & Space variations (e.g. multi-agent -> multiagent -> multi agent)
+        no_hyphen = anchor_clean.replace("-", "")
+        with_spaces = anchor_clean.replace("-", " ")
+        syns.add(no_hyphen)
+        syns.add(with_spaces)
+        
+        # 2. Individual technical unigrams from anchor
+        words = [w for w in re.findall(r'\b[a-zA-Z0-9\-]+\b', anchor_clean) if w not in ENGLISH_STOPWORDS and len(w) > 2]
+        syns.update(words)
+        
+        # 3. Canonical aliases from skill_synonyms.json if available
+        for token in words:
+            for canonical, aliases in self.synonyms.items():
+                if token == canonical or token in aliases:
+                    syns.add(canonical)
+                    syns.update(aliases[:3])
+                    
+        return list(syns)
+
+    def classify_item_tier(self, item, keywords, subject_anchor=""):
+        """
+        Dynamically classifies each candidate item into Tier 1 (Domain Framework) or Tier 2 (Subsystem Tooling)
+        purely by comparing candidate text against the prompt's Subject Anchor vs Subsystem Keyphrases.
+        Zero hardcoded word sets!
+        """
+        title = (item.get("Title") or "").lower()
+        desc = (item.get("Description") or "").lower()
+        text = f"{title} {desc}"
+        
+        # Dynamic Domain Vocabulary derived from prompt Subject Anchor
+        anchor_words = self.get_anchor_synonyms(subject_anchor) if subject_anchor else []
+        has_domain = any(w in text for w in anchor_words if len(w) > 2)
+        
+        # Dynamic Utility Vocabulary derived from prompt Subsystem Keyphrases (non-anchor keyphrases)
+        tech_keywords = [k.lower() for k in keywords if k not in ENGLISH_STOPWORDS]
+        subsystem_terms = [k for k in tech_keywords if k not in anchor_words and len(k) > 2]
+        has_utility = any(term in text for term in subsystem_terms)
+        
+        # Dynamic Tie-Break & Fallthrough Logic
+        if has_domain and has_utility:
+            classification = "Tier2"
+            reason = "Tie-Break: Matched both prompt subject anchor and subsystem modifiers -> Assigned Tier 2 Subsystem Tooling Profile"
+        elif has_utility:
+            classification = "Tier2"
+            reason = "Matched prompt subsystem modifiers -> Assigned Tier 2 Subsystem Tooling Profile"
+        elif has_domain:
+            classification = "Tier1"
+            reason = "Matched prompt subject anchor -> Assigned Tier 1 Domain Framework Profile"
+        else:
+            classification = "Tier1"
+            reason = "Default Fallthrough: Matched general vocabulary -> Defaulted to Tier 1 Domain Framework Profile"
+            
+        return classification, reason
+
     def score_item(self, item, keywords, subject_anchor=""):
         """
-        Calculates mathematical match score based purely on technical term & keyphrase match,
-        filtering out generic stopword noise and enforcing subject anchor alignment.
+        Calculates mathematical match score using Calibrated Two-Tier Weighted Overlap:
+        Tier 1: Score = 0.40 * S_anchor + 0.45 * S_keyphrases + 0.15 * S_unigrams
+        Tier 2: Score = 0.15 * S_anchor + 0.60 * S_keyphrases + 0.25 * S_unigrams
         """
         if not keywords:
             return 0.0, [], ""
@@ -144,53 +253,63 @@ class UniversalMultiRoleMatcher:
         
         combined_text = f"{title} {desc} {p_title} {p_desc} {p_outline}"
         
-        # Filter keywords to only technical terms (no stopwords)
-        tech_keywords = [k for k in keywords if k not in ENGLISH_STOPWORDS]
-        if not tech_keywords:
-            tech_keywords = keywords
-            
-        matched_kw = []
-        score_points = 0.0
-        max_possible = max(1, len(tech_keywords)) * 25.0
-        
-        for kw in tech_keywords:
-            kw_lower = kw.lower()
-            if kw_lower in combined_text:
-                matched_kw.append(kw)
-                
-                # Pure dynamic math weighting based on n-gram compound length (multi-word technical terms)
-                words_in_kw = len(kw_lower.split())
-                weight = 1.0 + (words_in_kw * 2.0)
-                
-                if kw_lower in title:
-                    score_points += 35.0 * weight
-                elif kw_lower in p_title:
-                    score_points += 30.0 * weight
-                elif kw_lower in desc:
-                    score_points += 20.0 * weight
-                elif kw_lower in p_desc or kw_lower in p_outline:
-                    score_points += 10.0 * weight
-                else:
-                    score_points += 5.0 * weight
-
-        # Subject Anchor Alignment Check (Subject Mismatch Penalty)
-        if subject_anchor:
-            anchor_words = [w for w in subject_anchor.split() if w not in ENGLISH_STOPWORDS]
-            has_anchor = any(w in combined_text for w in anchor_words)
-            if not has_anchor:
-                # Heavy penalty if item completely misses the core subject anchor
-                score_points *= 0.05
-            else:
-                score_points *= 1.5
-
-        # Normalized mathematical ratio formula (0.0 - 100.0%)
-        if max_possible > 0 and score_points > 0:
-            raw_ratio = score_points / max_possible
-            final_score = min(100.0, round(raw_ratio * 100.0, 1))
+        # Classify Tier dynamically based on prompt terms
+        tier, reason = self.classify_item_tier(item, keywords, subject_anchor)
+        if tier == "Tier2":
+            w_anchor, w_keyphrase, w_unigram = 0.15, 0.60, 0.25
         else:
-            final_score = 0.0
+            w_anchor, w_keyphrase, w_unigram = 0.40, 0.45, 0.15
+
+        # 1. Subject Anchor Alignment Score (S_anchor)
+        s_anchor = 0.0
+        if subject_anchor:
+            anchor_syns = self.get_anchor_synonyms(subject_anchor)
+            if any(syn in combined_text for syn in anchor_syns):
+                s_anchor = 100.0
+            else:
+                s_anchor = 0.0
+        else:
+            s_anchor = 100.0
+
+        # 2. Keyphrase Overlap Score (S_keyphrases - Multi-word N-Grams)
+        tech_keywords = [k for k in keywords if k not in ENGLISH_STOPWORDS]
+        keyphrases = [k for k in tech_keywords if len(k.split()) > 1]
+        unigrams = [k for k in tech_keywords if len(k.split()) == 1]
         
-        # Sort matched keywords by length (longest keyphrases first, no stopwords)
+        matched_kw = []
+        
+        # Keyphrase scoring
+        matched_kp_count = 0
+        for kp in keyphrases:
+            kp_lower = kp.lower()
+            if kp_lower in combined_text:
+                matched_kw.append(kp)
+                matched_kp_count += 1
+            else:
+                # Keyphrase Synonym expansion check
+                for canonical, aliases in self.synonyms.items():
+                    if (kp_lower == canonical or kp_lower in aliases) and any(a in combined_text for a in aliases):
+                        matched_kw.append(kp)
+                        matched_kp_count += 1
+                        break
+                        
+        s_keyphrase = (matched_kp_count / max(1, len(keyphrases))) * 100.0 if keyphrases else 0.0
+
+        # 3. Unigram Coverage Score (S_unigrams)
+        matched_uni_count = 0
+        for uni in unigrams:
+            uni_lower = uni.lower()
+            if uni_lower in combined_text:
+                matched_kw.append(uni)
+                matched_uni_count += 1
+        
+        s_unigram = (matched_uni_count / max(1, len(unigrams))) * 100.0 if unigrams else 0.0
+
+        # Final Calibrated Score Formula
+        final_score = (w_anchor * s_anchor) + (w_keyphrase * s_keyphrase) + (w_unigram * s_unigram)
+        final_score = min(100.0, round(final_score, 1))
+
+        # Sort matched keywords by length (longest keyphrases first)
         clean_matched = [k for k in matched_kw if k not in ENGLISH_STOPWORDS]
         sorted_matched = sorted(list(set(clean_matched or matched_kw)), key=lambda x: (len(x.split()), len(x)), reverse=True)
         integration_tip = self.generate_role_tip(item, sorted_matched)
@@ -232,25 +351,27 @@ class UniversalMultiRoleMatcher:
         
         for category in ALL_12_CATEGORIES:
             cat_items = all_updates_dict.get(category, [])
-            scored_items = []
             
+            # Deterministic pre-sorting by unique URL/Link to prevent thread-race ordering variance
+            cat_items = sorted(cat_items, key=lambda x: str(x.get("Link", "")))
+            
+            scored_items = []
             for item in cat_items:
                 score, matched_kw, tip = self.score_item(item, keywords, subject_anchor)
-                # Only include items that meet the minimum relevance threshold (>= 15.0%)
-                if score >= 15.0:
+                # Enforce strict 25.0% relevance threshold
+                if score >= 25.0:
                     item_copy = dict(item)
                     item_copy["MatchScore"] = score
                     item_copy["MatchedKeywords"] = matched_kw
                     item_copy["IntegrationTip"] = tip
                     scored_items.append(item_copy)
                     
-            scored_items.sort(key=lambda x: x["MatchScore"], reverse=True)
+            scored_items.sort(key=lambda x: (x["MatchScore"], str(x.get("Link", ""))), reverse=True)
             top_matches = scored_items[:top_k]
             
             results[category] = top_matches
             
-            # If category has fewer than 2 matches or low score, mark for live fallback execution
-            if len(top_matches) < 2 or (top_matches and top_matches[0]["MatchScore"] < 20.0):
+            if len(top_matches) < 2 or (top_matches and top_matches[0]["MatchScore"] < 25.0):
                 low_confidence_categories.append(category)
                 
         return {
