@@ -612,12 +612,13 @@ def fetch_live_category_fallback(category_name, query=""):
                                 "Timestamp": time_ago(pub)
                             })
             elif category_name == "PyPI Release":
-                primary_term = q_str.split('+')[0]
-                url = f"https://api.github.com/search/repositories?q={primary_term}+pypi&per_page=10"
+                url = f"https://api.github.com/search/repositories?q={q_str}&per_page=10"
                 res = requests.get(url, headers=headers, timeout=6)
                 if res.status_code == 200:
                     for item in res.json().get('items', []):
                         repo_name = item.get('name', '')
+                        repo_desc = item.get('description') or ""
+                        repo_url = item.get('html_url', '').lower()
                         # Verify whether candidate corresponds to an authentic published package on PyPI
                         pypi_url = f"https://pypi.org/pypi/{repo_name}/json"
                         try:
@@ -626,13 +627,25 @@ def fetch_live_category_fallback(category_name, query=""):
                                 info = p_res.json().get('info', {})
                                 pkg_name = info.get('name', repo_name)
                                 p_link = f"https://pypi.org/project/{pkg_name}/"
-                                if p_link not in seen_links:
+                                
+                                # Verification Check: Ensure PyPI package project_urls or homepage matches GitHub repo context
+                                proj_urls = str(info.get('project_urls') or {}).lower()
+                                home_page = str(info.get('home_page') or "").lower()
+                                combined_pypi_urls = f"{proj_urls} {home_page}"
+                                
+                                # Accept if repo name matches or project_urls link to github
+                                if p_link not in seen_links and ("github.com" in combined_pypi_urls or repo_name.lower() in pkg_name.lower() or pkg_name.lower() in repo_name.lower()):
                                     seen_links.add(p_link)
                                     pkg_version = info.get('version', '')
+                                    pypi_sum = info.get('summary', '').strip()
+                                    
+                                    # Combine PyPI Summary + GitHub Description for maximum keyword coverage
+                                    combined_desc = f"{pypi_sum} — {repo_desc}" if (pypi_sum and repo_desc and pypi_sum != repo_desc) else (pypi_sum or repo_desc or "Python package published on PyPI.")
+                                    
                                     results.append({
                                         "Type": "PyPI Release",
                                         "Title": f"{pkg_name} {pkg_version}".strip(),
-                                        "Description": info.get('summary') or item.get('description') or "Python package published on PyPI.",
+                                        "Description": combined_desc,
                                         "Link": p_link,
                                         "Timestamp": "PyPI Release"
                                     })
