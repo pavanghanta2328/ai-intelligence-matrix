@@ -188,10 +188,19 @@ class UniversalMultiRoleMatcher:
         syns.add(no_hyphen)
         syns.add(with_spaces)
         
-        # 2. Individual technical unigrams from anchor
+        # 2. Compound bigrams/trigrams & hyphenated technical terms from anchor
         words = [w for w in re.findall(r'\b[a-zA-Z0-9\-]+\b', anchor_clean) if w not in ENGLISH_STOPWORDS and len(w) > 2]
-        syns.update(words)
-        
+        for w in words:
+            if "-" in w:
+                syns.add(w)
+                syns.add(w.replace("-", ""))
+                syns.add(w.replace("-", " "))
+                
+        for i in range(len(words) - 1):
+            syns.add(f"{words[i]} {words[i+1]}")
+            syns.add(f"{words[i]}-{words[i+1]}")
+            syns.add(f"{words[i]}{words[i+1]}")
+            
         # 3. Canonical aliases from skill_synonyms.json if available
         for token in words:
             for canonical, aliases in self.synonyms.items():

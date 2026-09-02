@@ -634,20 +634,25 @@ def fetch_live_category_fallback(category_name, query=""):
                                 "Timestamp": time_ago(a.get('published_at', ''))
                             })
             elif category_name == "Medium & Dev Community":
-                url = f"https://dev.to/api/articles?per_page=5"
+                url = f"https://dev.to/api/articles?tag={q_str.replace('+', '-')}&per_page=5"
                 res = requests.get(url, headers=headers, timeout=6)
                 if res.status_code == 200:
                     for a in res.json():
-                        link = a.get('url', '#')
-                        if link not in seen_links:
-                            seen_links.add(link)
-                            results.append({
-                                "Type": "Medium & Dev Community",
-                                "Title": f"[DEV.TO] {a.get('title', '')}",
-                                "Description": a.get('description', '') or "Developer community article.",
-                                "Link": link,
-                                "Timestamp": time_ago(a.get('published_at', ''))
-                            })
+                        title = a.get('title', '')
+                        desc = a.get('description', '') or ""
+                        # Content Verification: Ensure article contains query terms, reject silent trending fallbacks
+                        q_words = [w for w in q_str.split('+') if len(w) > 2]
+                        if any(w.lower() in (title + " " + desc).lower() for w in q_words):
+                            link = a.get('url', '#')
+                            if link not in seen_links:
+                                seen_links.add(link)
+                                results.append({
+                                    "Type": "Medium & Dev Community",
+                                    "Title": f"[DEV.TO] {title}",
+                                    "Description": desc or "Developer community article.",
+                                    "Link": link,
+                                    "Timestamp": time_ago(a.get('published_at', ''))
+                                })
             elif category_name == "Reddit Discussion":
                 url = f"https://www.reddit.com/search.json?q={q_str}&sort=relevance&limit=5"
                 res = requests.get(url, headers=headers, timeout=6)
