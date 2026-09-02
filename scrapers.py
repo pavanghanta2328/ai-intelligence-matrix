@@ -532,6 +532,9 @@ def fetch_live_category_fallback(category_name, query=""):
     import urllib.parse
     subqueries = extract_fallback_subqueries(query, category_name)
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"token {token}"
     results = []
     seen_links = set()
     
