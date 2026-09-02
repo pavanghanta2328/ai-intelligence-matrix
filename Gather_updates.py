@@ -687,7 +687,7 @@ else:
                             scored = []
                             for it in live_items:
                                 sc, kw, tip = scenario_matcher.score_item(it, rec_result["keywords"], rec_result.get("subject_anchor", ""))
-                                if sc >= 20.0:
+                                if sc >= 15.0:
                                     it_copy = dict(it)
                                     it_copy["MatchScore"] = sc
                                     it_copy["MatchedKeywords"] = kw
