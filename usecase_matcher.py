@@ -40,7 +40,10 @@ ACTION_VERB_STOPLIST = {
     "build", "building", "create", "creating", "design", "designing",
     "implement", "implementing", "develop", "developing", "make", "making",
     "construct", "constructing", "want", "need", "help", "thought", "thouight", "thougth", "think",
-    "looking", "find", "provide", "run", "running", "set", "setting"
+    "looking", "find", "provide", "run", "running", "set", "setting",
+    "orchestrate", "orchestrates", "orchestrating", "enable", "enables", "enabling",
+    "execute", "executing", "evaluate", "evaluating", "enforce", "enforcing",
+    "produce", "producing", "launch", "launching"
 }
 
 GENERIC_CONTAINER_NOUNS = {
