@@ -716,9 +716,10 @@ def fetch_live_category_fallback(category_name, query=""):
                                 "Timestamp": time_ago(item.get('updated_at', ''))
                             })
             elif category_name == "Prompt & Guardrail Templates":
-                url = f"https://api.github.com/search/repositories?q={q_str}+guardrail+prompt&per_page=5"
+                primary_term = q_str.split('+')[0]
+                url = f"https://api.github.com/search/repositories?q={primary_term}+guardrail&per_page=5"
                 res = requests.get(url, headers=headers, timeout=6)
-                if res.status_code == 200:
+                if res.status_code == 200 and res.json().get('items'):
                     for item in res.json().get('items', []):
                         link = item.get('html_url', '#')
                         if link not in seen_links:
@@ -730,6 +731,22 @@ def fetch_live_category_fallback(category_name, query=""):
                                 "Link": link,
                                 "Timestamp": time_ago(item.get('updated_at', ''))
                             })
+                else:
+                    # Fallback query using prompt templates
+                    url2 = f"https://api.github.com/search/repositories?q=system-prompt+{primary_term}&per_page=5"
+                    res2 = requests.get(url2, headers=headers, timeout=6)
+                    if res2.status_code == 200:
+                        for item in res2.json().get('items', []):
+                            link = item.get('html_url', '#')
+                            if link not in seen_links:
+                                seen_links.add(link)
+                                results.append({
+                                    "Type": "Prompt & Guardrail Templates",
+                                    "Title": f"[GUARDRAIL / PROMPT] {item.get('name', '')}",
+                                    "Description": item.get('description') or "System prompt & guardrail template repository.",
+                                    "Link": link,
+                                    "Timestamp": time_ago(item.get('updated_at', ''))
+                                })
     except Exception as e:
         print(f"Error fetching live fallback for {category_name}: {e}")
         
