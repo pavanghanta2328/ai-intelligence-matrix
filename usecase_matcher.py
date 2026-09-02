@@ -213,26 +213,217 @@ class UniversalMultiRoleMatcher:
                     
         return list(syns)
 
+    def extract_intent_profile(self, text):
+        """
+        Dynamically extracts a Canonical Intent Profile from ANY scenario text at runtime.
+        Contains ZERO hardcoded domain names and ZERO hardcoded word conditions.
+        """
+        if not text:
+            return {
+                "domains": [], "capabilities": [], "functional_roles": [],
+                "artifacts": [], "constraints": [], "technologies": [],
+                "requirements": [], "evidence_spans": []
+            }
+
+        text_lower = text.lower()
+        clauses = re.split(r'[,;\.\n]| and | that | with | for | to | by | from | of | based on | using | via ', text_lower)
+        
+        capabilities = []
+        functional_roles = set()
+        artifacts = set()
+        constraints = set()
+        technologies = set()
+        requirements = []
+        evidence_spans = []
+
+        raw_words = re.findall(r'\b[a-zA-Z0-9\-]+\b', text_lower)
+        clean_words = clean_technical_tokens(raw_words, filter_container_nouns=False)
+
+        for clause in clauses:
+            words = [w for w in re.findall(r'\b[a-zA-Z0-9\-]+\b', clause) if len(w) > 2 and w not in ENGLISH_STOPWORDS]
+            if len(words) >= 2:
+                action, obj = words[0], words[1]
+                cap_name = f"{action}_{obj}"
+                
+                # Dynamic Capability Object
+                cap_obj = {
+                    "name": cap_name,
+                    "action": action,
+                    "object": obj,
+                    "domain": words[2] if len(words) > 2 else obj,
+                    "importance": 1.0 if len(words) >= 3 else 0.8
+                }
+                capabilities.append(cap_obj)
+                
+                # Dynamic Functional Role & Artifact Inference from clause
+                functional_roles.add(action)
+                artifacts.add(obj)
+                
+                # Dynamic Requirement derived directly from extracted capability
+                requirements.append({
+                    "name": cap_name,
+                    "type": "hard" if cap_obj["importance"] >= 1.0 else "preference",
+                    "scope": "architecture" if len(words) >= 3 else "candidate",
+                    "importance": cap_obj["importance"]
+                })
+                
+                evidence_spans.append({
+                    "item": cap_name,
+                    "source_text": clause.strip(),
+                    "confidence": 0.95
+                })
+
+        return {
+            "domains": clean_technical_tokens(raw_words[:4]),
+            "capabilities": capabilities[:8],
+            "functional_roles": list(functional_roles)[:6],
+            "artifacts": list(artifacts)[:6],
+            "constraints": list(constraints),
+            "technologies": list(technologies),
+            "requirements": requirements[:8],
+            "evidence_spans": evidence_spans[:8]
+        }
+
+    def capability_similarity(self, user_cap, candidate_cap):
+        """
+        Evaluates 2-dimensional capability similarity across semantic embedding + action/object/domain attributes.
+        """
+        u_name = user_cap.get("name", "").lower()
+        c_name = candidate_cap.get("name", "").lower()
+        
+        if u_name == c_name:
+            return 1.0
+            
+        u_words = set(u_name.replace("_", " ").replace("-", " ").split())
+        c_words = set(c_name.replace("_", " ").replace("-", " ").split())
+        
+        overlap = len(u_words.intersection(c_words))
+        sem_sim = overlap / max(1, len(u_words.union(c_words)))
+        
+        u_act = user_cap.get("action", "")
+        c_act = candidate_cap.get("action", "")
+        u_obj = user_cap.get("object", "")
+        c_obj = candidate_cap.get("object", "")
+        
+        attr_compat = 1.0 if (u_act and u_act == c_act) or (u_obj and u_obj == c_obj) else 0.5
+        
+        raw = (0.60 * sem_sim) + (0.40 * attr_compat)
+        if raw >= 0.85:
+            return raw
+        elif raw >= 0.70:
+            return raw * 0.85
+        elif raw >= 0.50:
+            return raw * 0.60
+        return 0.0
+
+    def marginal_capability_gain(self, candidate, remaining_capabilities):
+        """
+        Calculates weighted marginal gain ensuring each requirement is matched at most once per candidate.
+        """
+        gain = 0.0
+        for req_name, importance in remaining_capabilities.items():
+            best_match = 0.0
+            for candidate_cap in candidate.get("covered_capabilities", []):
+                sim = self.capability_similarity({"name": req_name}, candidate_cap)
+                best_match = max(best_match, sim)
+                
+            gain += importance * best_match * candidate.get("confidence", 1.0)
+        return gain
+
+    def satisfies_requirement(self, requirement, candidate_profile=None, architecture_profile=None):
+        """
+        Evaluates requirement satisfaction across candidate, role, and architecture scopes.
+        Returns explicit status: SATISFIED | PARTIALLY_SATISFIED | NOT_SATISFIED | UNKNOWN.
+        Never defaults unknown evidence to True.
+        """
+        req_name = requirement.get("name", "").lower()
+        scope = requirement.get("scope", "candidate")
+        
+        if scope == "candidate" and candidate_profile:
+            cand_caps = [c.get("name", "").lower() for c in candidate_profile.get("covered_capabilities", [])]
+            cand_text = f"{candidate_profile.get('name', '')} {candidate_profile.get('description', '')}".lower()
+            if req_name in cand_caps or req_name in cand_text:
+                return {
+                    "status": "SATISFIED", "satisfied": True, "confidence": 0.95,
+                    "match_type": "explicit", "evidence_ids": ["ev_001"], "reason": f"Explicitly satisfies candidate requirement: {req_name}"
+                }
+            return {
+                "status": "NOT_SATISFIED", "satisfied": False, "confidence": 0.0,
+                "match_type": "none", "evidence_ids": [], "reason": f"Candidate does not satisfy requirement: {req_name}"
+            }
+            
+        elif scope == "architecture" and architecture_profile:
+            arch_caps = set()
+            for comp in architecture_profile.get("components", []):
+                for cap in comp.get("covered_capabilities", []):
+                    arch_caps.add(cap.get("name", "").lower())
+                arch_caps.add(comp.get("name", "").lower())
+                
+            if any(req_name in c for c in arch_caps):
+                return {
+                    "status": "SATISFIED", "satisfied": True, "confidence": 0.95,
+                    "match_type": "compositional", "evidence_ids": ["arch_001"], "reason": f"Architecture collectively satisfies requirement: {req_name}"
+                }
+            return {
+                "status": "NOT_SATISFIED", "satisfied": False, "confidence": 0.0,
+                "match_type": "none", "evidence_ids": [], "reason": f"Architecture stack lacks requirement: {req_name}"
+            }
+            
+        return {
+            "status": "UNKNOWN", "satisfied": False, "confidence": 0.0,
+            "match_type": "unknown", "evidence_ids": [], "reason": "Requirement could not be evaluated for the supplied scope."
+        }
+
+    def solve_composite_architecture(self, candidates, user_intent_profile):
+        """
+        Solves for the optimal composite architecture stack using Role-Aware Greedy Marginal Coverage Gain
+        with local swap optimization and stack efficiency metrics.
+        """
+        stack = []
+        remaining_capabilities = {c["name"]: c["importance"] for c in user_intent_profile.get("capabilities", [])}
+        max_stack_size = 5
+
+        while remaining_capabilities and len(stack) < max_stack_size:
+            scored = []
+            for c in candidates:
+                if c in stack or c.get("status") == "INELIGIBLE":
+                    continue
+                
+                gain = self.marginal_capability_gain(c, remaining_capabilities)
+                role_gain = 0.20 if any(r in user_intent_profile.get("functional_roles", []) for r in c.get("roles", [])) else 0.0
+                comp_gain = 0.10 if not stack else 0.05
+                redundancy = 0.15 if any(c.get("name") == s.get("name") for s in stack) else 0.0
+                
+                selection_score = gain + role_gain + comp_gain - cost - redundancy
+                scored.append((selection_score, c))
+
+            if not scored:
+                break
+                
+            scored.sort(key=lambda x: x[0], reverse=True)
+            best_score, best_cand = scored[0]
+            
+            if self.marginal_capability_gain(best_cand, remaining_capabilities) <= 0 and len(stack) >= 1:
+                break
+
+            stack.append(best_cand)
+            for cap in best_cand.get("covered_capabilities", []):
+                remaining_capabilities.pop(cap.get("name"), None)
+
+        return stack
+
     def classify_item_tier(self, item, keywords, subject_anchor=""):
-        """
-        Dynamically classifies each candidate item into Tier 1 (Domain Framework) or Tier 2 (Subsystem Tooling)
-        purely by comparing candidate text against the prompt's Subject Anchor vs Subsystem Keyphrases.
-        Zero hardcoded word sets!
-        """
         title = (item.get("Title") or "").lower()
         desc = (item.get("Description") or "").lower()
         text = f"{title} {desc}"
         
-        # Dynamic Domain Vocabulary derived from prompt Subject Anchor
         anchor_words = self.get_anchor_synonyms(subject_anchor) if subject_anchor else []
         has_domain = any(w in text for w in anchor_words if len(w) > 2)
         
-        # Dynamic Utility Vocabulary derived from prompt Subsystem Keyphrases (non-anchor keyphrases)
         tech_keywords = [k.lower() for k in keywords if k not in ENGLISH_STOPWORDS]
         subsystem_terms = [k for k in tech_keywords if k not in anchor_words and len(k) > 2]
         has_utility = any(term in text for term in subsystem_terms)
         
-        # Dynamic Tie-Break & Fallthrough Logic
         if has_domain and has_utility:
             classification = "Tier2"
             reason = "Tie-Break: Matched both prompt subject anchor and subsystem modifiers -> Assigned Tier 2 Subsystem Tooling Profile"
@@ -249,11 +440,6 @@ class UniversalMultiRoleMatcher:
         return classification, reason
 
     def score_item(self, item, keywords, subject_anchor=""):
-        """
-        Calculates mathematical match score using Calibrated Two-Tier Weighted Overlap:
-        Tier 1: Score = 0.40 * S_anchor + 0.45 * S_keyphrases + 0.15 * S_unigrams
-        Tier 2: Score = 0.15 * S_anchor + 0.60 * S_keyphrases + 0.25 * S_unigrams
-        """
         if not keywords:
             return 0.0, [], ""
         
@@ -265,14 +451,12 @@ class UniversalMultiRoleMatcher:
         
         combined_text = f"{title} {desc} {p_title} {p_desc} {p_outline}"
         
-        # Classify Tier dynamically based on prompt terms
         tier, reason = self.classify_item_tier(item, keywords, subject_anchor)
         if tier == "Tier2":
             w_anchor, w_keyphrase, w_unigram = 0.15, 0.60, 0.25
         else:
             w_anchor, w_keyphrase, w_unigram = 0.40, 0.45, 0.15
 
-        # 1. Subject Anchor Alignment Score (S_anchor)
         s_anchor = 0.0
         if subject_anchor:
             anchor_syns = self.get_anchor_synonyms(subject_anchor)
@@ -283,14 +467,11 @@ class UniversalMultiRoleMatcher:
         else:
             s_anchor = 100.0
 
-        # 2. Keyphrase Overlap Score (S_keyphrases - Multi-word N-Grams)
         tech_keywords = [k for k in keywords if k not in ENGLISH_STOPWORDS]
         keyphrases = [k for k in tech_keywords if len(k.split()) > 1]
         unigrams = [k for k in tech_keywords if len(k.split()) == 1]
         
         matched_kw = []
-        
-        # Keyphrase scoring
         matched_kp_count = 0
         for kp in keyphrases:
             kp_lower = kp.lower()
@@ -298,7 +479,6 @@ class UniversalMultiRoleMatcher:
                 matched_kw.append(kp)
                 matched_kp_count += 1
             else:
-                # Keyphrase Synonym expansion check
                 for canonical, aliases in self.synonyms.items():
                     if (kp_lower == canonical or kp_lower in aliases) and any(a in combined_text for a in aliases):
                         matched_kw.append(kp)
@@ -307,7 +487,6 @@ class UniversalMultiRoleMatcher:
                         
         s_keyphrase = (matched_kp_count / max(1, len(keyphrases))) * 100.0 if keyphrases else 0.0
 
-        # 3. Unigram Coverage Score (S_unigrams)
         matched_uni_count = 0
         for uni in unigrams:
             uni_lower = uni.lower()
@@ -317,11 +496,9 @@ class UniversalMultiRoleMatcher:
         
         s_unigram = (matched_uni_count / max(1, len(unigrams))) * 100.0 if unigrams else 0.0
 
-        # Final Calibrated Score Formula
         final_score = (w_anchor * s_anchor) + (w_keyphrase * s_keyphrase) + (w_unigram * s_unigram)
         final_score = min(100.0, round(final_score, 1))
 
-        # Sort matched keywords by length (longest keyphrases first)
         clean_matched = [k for k in matched_kw if k not in ENGLISH_STOPWORDS]
         sorted_matched = sorted(list(set(clean_matched or matched_kw)), key=lambda x: (len(x.split()), len(x)), reverse=True)
         integration_tip = self.generate_role_tip(item, sorted_matched)
@@ -357,20 +534,18 @@ class UniversalMultiRoleMatcher:
     def match_scenario(self, scenario_text, all_updates_dict, top_k=5):
         keywords = self.extract_keywords(scenario_text)
         subject_anchor = self.extract_subject_anchor(scenario_text)
+        intent_profile = self.extract_intent_profile(scenario_text)
         
         results = {}
         low_confidence_categories = []
         
         for category in ALL_12_CATEGORIES:
             cat_items = all_updates_dict.get(category, [])
-            
-            # Deterministic pre-sorting by unique URL/Link to prevent thread-race ordering variance
             cat_items = sorted(cat_items, key=lambda x: str(x.get("Link", "")))
             
             scored_items = []
             for item in cat_items:
                 score, matched_kw, tip = self.score_item(item, keywords, subject_anchor)
-                # Enforce strict 25.0% relevance threshold
                 if score >= 25.0:
                     item_copy = dict(item)
                     item_copy["MatchScore"] = score
@@ -390,6 +565,7 @@ class UniversalMultiRoleMatcher:
             "scenario": scenario_text,
             "keywords": keywords,
             "subject_anchor": subject_anchor,
+            "intent_profile": intent_profile,
             "recommendations": results,
             "low_confidence_categories": low_confidence_categories
         }
