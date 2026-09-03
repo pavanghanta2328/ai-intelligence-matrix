@@ -1090,6 +1090,171 @@ class UniversalMultiRoleMatcher:
         return queries
 
 
+    # ------------------------------------------------------------------
+    # Stage 7: Discovery Recall Instrumentation
+    # ------------------------------------------------------------------
+
+    def _generate_queries_by_capability(self, core_capabilities, relationships=None):
+        """
+        Stage 7 helper: Same logic as generate_ecosystem_queries() but returns
+        {cap_name: {cat: [queries]}} instead of the merged {cat: [queries]}.
+        Used for per-capability recall attribution without changing the public interface.
+        """
+        enrichment_context = {}
+        if relationships:
+            for rel in relationships:
+                if rel["relation"] in ("supports", "enables"):
+                    src = rel["source"]
+                    tgt_tokens = rel.get("context_tokens", [])
+                    if tgt_tokens:
+                        enrichment_context.setdefault(src, []).extend(tgt_tokens)
+
+        by_cap = {}
+        seen_per_cat = {cat: [] for cat in ALL_12_CATEGORIES}  # for cross-cap dedup
+
+        for c in core_capabilities:
+            act = c.get("action", "")
+            obj = c.get("object", "")
+            cap_name = c.get("name", "")
+            if not act or not obj:
+                continue
+
+            base_phrase = f"{act} {obj}".replace("_", " ").strip()
+            ctx_tokens = enrichment_context.get(cap_name, [])
+            if ctx_tokens:
+                enriched = f"{base_phrase} {' '.join(ctx_tokens[:2])}"
+                enriched_phrase = self._dedup_query_tokens(enriched)
+            else:
+                enriched_phrase = base_phrase
+
+            cap_queries = {cat: [] for cat in ALL_12_CATEGORIES}
+            for cat, intent_templates in self._ECOSYSTEM_INTENT_MATRIX.items():
+                for template in intent_templates:
+                    raw_query = template.format(phrase=enriched_phrase)
+                    clean_query = self._dedup_query_tokens(raw_query)
+                    if clean_query not in cap_queries[cat]:
+                        cap_queries[cat].append(clean_query)
+                cap_queries[cat] = self._deduplicate_queries(cap_queries[cat])
+
+            by_cap[cap_name] = cap_queries
+
+        return by_cap
+
+    def _is_discoverable(self, candidate, queries_for_cat, min_meaningful_overlap=2):
+        """
+        Stage 7: Proxy discoverability check.
+        A candidate is considered discoverable by a query list if at least
+        `min_meaningful_overlap` meaningful tokens (len > 3) from any single query
+        appear in the candidate's title + description text.
+
+        This simulates "would a live search API surface this candidate?"
+        It is independent of Stage A — a candidate rejected by Stage A can still
+        be 'discovered' (discovery success, but Stage A false negative).
+        """
+        candidate_text = (
+            f"{candidate.get('Title', '')} {candidate.get('Description', '')}"
+        ).lower()
+        for q in queries_for_cat:
+            meaningful_tokens = [t for t in q.lower().split() if len(t) > 3]
+            overlap = sum(1 for t in meaningful_tokens if t in candidate_text)
+            if overlap >= min_meaningful_overlap:
+                return True
+        return False
+
+    def compute_discovery_recall(self, core_capabilities, queries_by_capability,
+                                  gold_corpus, candidate_pool=None):
+        """
+        Stage 7: Discovery Recall computation — INDEPENDENT of Stage A.
+
+        Measures whether GOLD_RELEVANT candidates are discoverable by the
+        generated capability queries, regardless of whether they pass Stage A.
+
+        A candidate discovered but rejected by Stage A = discovery success + Stage A FN.
+        A candidate not discoverable at all = discovery failure.
+
+        Args:
+            core_capabilities:    list of normalized capability dicts
+            queries_by_capability: {cap_name: {cat: [query strings]}} from _generate_queries_by_capability()
+            gold_corpus:          list of {Title, Description, Type, Link, GoldLabel} dicts
+                                  GoldLabel = "GOLD_RELEVANT" | "GOLD_IRRELEVANT"
+            candidate_pool:       optional {cat: [items]} — if provided, also checks which
+                                  pool items are discovered (production mode)
+
+        Returns:
+            {
+              "per_capability": {
+                cap_name: {
+                  cat: {
+                    "generated_queries": [...],
+                    "gold_relevant": [item titles],
+                    "discovered": [item titles discoverable by these queries],
+                    "recall": float  # 0.0 when no gold_relevant in this cat
+                  }
+                }
+              },
+              "summary": {
+                "gold_relevant_total":      int,
+                "gold_relevant_discovered": int,
+                "global_recall":            float,
+                "not_discovered":           [titles of GOLD_RELEVANT items not discovered]
+              }
+            }
+        """
+        gold_relevant = [g for g in gold_corpus if g.get("GoldLabel") == "GOLD_RELEVANT"]
+        gold_by_cat   = {}
+        for item in gold_relevant:
+            cat = item.get("Type", "Unknown")
+            gold_by_cat.setdefault(cat, []).append(item)
+
+        per_capability = {}
+        all_discovered_titles = set()
+        all_gold_relevant_titles = {g["Title"] for g in gold_relevant}
+
+        for cap in core_capabilities:
+            cap_name = cap.get("name", "")
+            if cap_name not in queries_by_capability:
+                continue
+            cap_recall = {}
+
+            for cat in ALL_12_CATEGORIES:
+                cat_queries   = queries_by_capability[cap_name].get(cat, [])
+                gold_in_cat   = gold_by_cat.get(cat, [])
+                gold_titles   = [g["Title"] for g in gold_in_cat]
+
+                discovered_titles = [
+                    g["Title"] for g in gold_in_cat
+                    if self._is_discoverable(g, cat_queries)
+                ]
+                all_discovered_titles.update(discovered_titles)
+
+                cat_recall = len(discovered_titles) / max(1, len(gold_titles)) if gold_titles else None
+                cap_recall[cat] = {
+                    "generated_queries": cat_queries,
+                    "gold_relevant":     gold_titles,
+                    "discovered":        discovered_titles,
+                    "recall":            round(cat_recall, 4) if cat_recall is not None else "N/A (no gold in this cat)"
+                }
+
+            per_capability[cap_name] = cap_recall
+
+        # Global recall: fraction of all GOLD_RELEVANT titles discovered by ANY capability
+        global_discovered = all_discovered_titles & all_gold_relevant_titles
+        not_discovered    = sorted(all_gold_relevant_titles - global_discovered)
+        global_recall     = (
+            len(global_discovered) / len(all_gold_relevant_titles)
+            if all_gold_relevant_titles else 0.0
+        )
+
+        return {
+            "per_capability": per_capability,
+            "summary": {
+                "gold_relevant_total":      len(all_gold_relevant_titles),
+                "gold_relevant_discovered": len(global_discovered),
+                "global_recall":            round(global_recall, 4),
+                "not_discovered":           not_discovered
+            }
+        }
+
     def match_scenario(self, scenario_text, all_updates_dict, top_k=5):
         """
         V3 Instrumented Pipeline with Dynamic Query Generation & Frozen V2 Stage A / Stage B Gates.
@@ -1102,24 +1267,30 @@ class UniversalMultiRoleMatcher:
         core_caps, suppressed_noise = self.normalize_capabilities(intent_profile)
         capability_relationships = self.build_capability_relationships(core_caps)
         generated_queries = self.generate_ecosystem_queries(core_caps, relationships=capability_relationships)
-        
+        # Stage 7: per-capability query attribution (for recall computation)
+        queries_by_capability = self._generate_queries_by_capability(core_caps, relationships=capability_relationships)
+
         results = {}
         low_confidence_categories = []
-        
+
         total_discovered = 0
         total_eligible = 0
         total_rejected = 0
-        
+        per_category_stats = {cat: {"discovered": 0, "stage_a_eligible": 0, "stage_a_rejected": 0}
+                              for cat in ALL_12_CATEGORIES}
+
         for category in ALL_12_CATEGORIES:
             cat_items = all_updates_dict.get(category, [])
             cat_items = sorted(cat_items, key=lambda x: str(x.get("Link", "")))
             total_discovered += len(cat_items)
-            
+            per_category_stats[category]["discovered"] = len(cat_items)
+
             scored_items = []
             for item in cat_items:
                 score, matched_kw, tip = self.score_item(item, keywords, subject_anchor, intent_profile=intent_profile)
                 if score >= 25.0:
                     total_eligible += 1
+                    per_category_stats[category]["stage_a_eligible"] += 1
                     item_copy = dict(item)
                     item_copy["MatchScore"] = score
                     item_copy["MatchedKeywords"] = matched_kw
@@ -1127,34 +1298,37 @@ class UniversalMultiRoleMatcher:
                     scored_items.append(item_copy)
                 else:
                     total_rejected += 1
-                    
+                    per_category_stats[category]["stage_a_rejected"] += 1
+
             scored_items.sort(key=lambda x: (x["MatchScore"], str(x.get("Link", ""))), reverse=True)
             top_matches = scored_items[:top_k]
-            
+
             results[category] = top_matches
-            
+
             if len(top_matches) < 2 or (top_matches and top_matches[0]["MatchScore"] < 25.0):
                 low_confidence_categories.append(category)
-                
+
         instrumentation = {
-            "raw_capabilities_count": len(intent_profile.get("capabilities", [])),
-            "core_semantic_capabilities": [c.get("name") for c in core_caps],
-            "suppressed_context_noise": suppressed_noise,
-            "capability_relationships": capability_relationships,
-            "generated_queries": generated_queries,
-            "total_candidates_discovered": total_discovered,
-            "stage_a_eligible_count": total_eligible,
-            "stage_a_rejected_count": total_rejected,
-            "stage_a_rejection_rate": f"{(total_rejected / max(1, total_discovered)) * 100.0:.1f}%"
+            "raw_capabilities_count":       len(intent_profile.get("capabilities", [])),
+            "core_semantic_capabilities":   [c.get("name") for c in core_caps],
+            "suppressed_context_noise":     suppressed_noise,
+            "capability_relationships":     capability_relationships,
+            "generated_queries":            generated_queries,
+            "generated_queries_by_capability": queries_by_capability,  # Stage 7
+            "per_category_stats":           per_category_stats,         # Stage 7
+            "total_candidates_discovered":  total_discovered,
+            "stage_a_eligible_count":       total_eligible,
+            "stage_a_rejected_count":       total_rejected,
+            "stage_a_rejection_rate":       f"{(total_rejected / max(1, total_discovered)) * 100.0:.1f}%"
         }
 
         return {
-            "scenario": scenario_text,
-            "keywords": keywords,
-            "subject_anchor": subject_anchor,
-            "intent_profile": intent_profile,
-            "instrumentation": instrumentation,
-            "recommendations": results,
+            "scenario":                scenario_text,
+            "keywords":                keywords,
+            "subject_anchor":          subject_anchor,
+            "intent_profile":          intent_profile,
+            "instrumentation":         instrumentation,
+            "recommendations":         results,
             "low_confidence_categories": low_confidence_categories
         }
 
