@@ -439,7 +439,7 @@ class UniversalMultiRoleMatcher:
             
         return classification, reason
 
-    def score_item(self, item, keywords, subject_anchor=""):
+    def score_item(self, item, keywords, subject_anchor="", intent_profile=None):
         if not keywords:
             return 0.0, [], ""
         
@@ -457,17 +457,26 @@ class UniversalMultiRoleMatcher:
         else:
             w_anchor, w_keyphrase, w_unigram = 0.40, 0.45, 0.15
 
+        # Preamble & Generic Process Stopwords that MUST NOT drive relevance matching
+        generic_preambles = {
+            "end-to-end", "end to end", "e2e", "lifecycle", "orchestrates", "orchestration",
+            "creation", "production-ready", "production ready", "multi-step", "multi step",
+            "launch data", "execute multi", "produce production", "workflow wizard",
+            "build", "building", "create", "creating", "platform", "engine", "system", "solutions"
+        }
+
         s_anchor = 0.0
-        if subject_anchor:
+        if subject_anchor and subject_anchor.lower() not in generic_preambles:
             anchor_syns = self.get_anchor_synonyms(subject_anchor)
-            if any(syn in combined_text for syn in anchor_syns):
+            if any(syn in combined_text for syn in anchor_syns if syn not in generic_preambles):
                 s_anchor = 100.0
             else:
                 s_anchor = 0.0
         else:
-            s_anchor = 100.0
+            s_anchor = 0.0 if subject_anchor.lower() in generic_preambles else 100.0
 
-        tech_keywords = [k for k in keywords if k not in ENGLISH_STOPWORDS]
+        # Filter generic preamble phrases from technical keywords
+        tech_keywords = [k for k in keywords if k.lower() not in ENGLISH_STOPWORDS and k.lower() not in generic_preambles]
         keyphrases = [k for k in tech_keywords if len(k.split()) > 1]
         unigrams = [k for k in tech_keywords if len(k.split()) == 1]
         
@@ -480,7 +489,7 @@ class UniversalMultiRoleMatcher:
                 matched_kp_count += 1
             else:
                 for canonical, aliases in self.synonyms.items():
-                    if (kp_lower == canonical or kp_lower in aliases) and any(a in combined_text for a in aliases):
+                    if (kp_lower == canonical or kp_lower in aliases) and any(a in combined_text for a in aliases if a not in generic_preambles):
                         matched_kw.append(kp)
                         matched_kp_count += 1
                         break
@@ -496,14 +505,223 @@ class UniversalMultiRoleMatcher:
         
         s_unigram = (matched_uni_count / max(1, len(unigrams))) * 100.0 if unigrams else 0.0
 
-        final_score = (w_anchor * s_anchor) + (w_keyphrase * s_keyphrase) + (w_unigram * s_unigram)
-        final_score = min(100.0, round(final_score, 1))
+    def suppress_generic_signals(self, tokens):
+        """
+        Module 2: Explicitly suppresses generic architectural adjectives and container terms
+        (e.g. platform, system, engine, orchestration, end-to-end, creation, dataset, solutions, tool, framework).
+        """
+        generic_terms = {
+            "end-to-end", "end to end", "e2e", "lifecycle", "orchestrates", "orchestration",
+            "creation", "production-ready", "production ready", "multi-step", "multi step",
+            "launch data", "execute multi", "produce production", "workflow wizard",
+            "build", "building", "create", "creating", "platform", "engine", "system",
+            "solutions", "solution", "tool", "tools", "framework", "frameworks", "dataset", "datasets"
+        }
+        return [t for t in tokens if t.lower() not in generic_terms and t.lower() not in ENGLISH_STOPWORDS]
 
-        clean_matched = [k for k in matched_kw if k not in ENGLISH_STOPWORDS]
-        sorted_matched = sorted(list(set(clean_matched or matched_kw)), key=lambda x: (len(x.split()), len(x)), reverse=True)
-        integration_tip = self.generate_role_tip(item, sorted_matched)
+    def extract_usecase_profile(self, text):
+        """
+        Module 1: Use-Case Reasoner.
+        Dynamically extracts Problems, Tasks, Capabilities, Artifacts, Roles, and Constraints
+        directly from the prompt structure at runtime.
+        """
+        if not text:
+            return {
+                "problems": [], "tasks": [], "capabilities": [],
+                "artifacts": [], "roles": [], "constraints": []
+            }
+
+        text_lower = text.lower()
+        clauses = re.split(r'[,;\.\n]| and | that | with | for | to | by | from | of | based on | using | via ', text_lower)
         
-        return final_score, sorted_matched[:3], integration_tip
+        capabilities = []
+        tasks = []
+        roles = set()
+        artifacts = set()
+        constraints = set()
+        problems = []
+
+        raw_words = re.findall(r'\b[a-zA-Z0-9\-]+\b', text_lower)
+
+        for clause in clauses:
+            raw_tokens = re.findall(r'\b[a-zA-Z0-9\-]+\b', clause)
+            clean_tokens = self.suppress_generic_signals(raw_tokens)
+            
+            if len(clean_tokens) >= 2:
+                action, obj = clean_tokens[0], clean_tokens[1]
+                cap_name = f"{action}_{obj}"
+                
+                cap_obj = {
+                    "name": cap_name,
+                    "action": action,
+                    "object": obj,
+                    "domain": clean_tokens[2] if len(clean_tokens) > 2 else obj,
+                    "importance": 1.0 if len(clean_tokens) >= 3 else 0.8
+                }
+                capabilities.append(cap_obj)
+                tasks.append(f"{action} {obj}")
+                roles.add(action)
+                artifacts.add(obj)
+                problems.append(clause.strip())
+
+        return {
+            "problems": problems[:4],
+            "tasks": tasks[:6],
+            "capabilities": capabilities[:8],
+            "artifacts": list(artifacts)[:6],
+            "roles": list(roles)[:6],
+            "constraints": list(constraints)
+        }
+
+    def profile_candidate(self, candidate_item):
+        """
+        Module 3: Candidate Profiler.
+        Converts raw candidate data into a structured Candidate Profile.
+        """
+        title = (candidate_item.get("Title") or "").strip()
+        desc = (candidate_item.get("Description") or "").strip()
+        text_lower = f"{title} {desc}".lower()
+        
+        raw_tokens = re.findall(r'\b[a-zA-Z0-9\-]+\b', text_lower)
+        clean_tech = self.suppress_generic_signals(raw_tokens)
+        
+        capabilities = []
+        for i in range(len(clean_tech) - 1):
+            capabilities.append({
+                "name": f"{clean_tech[i]}_{clean_tech[i+1]}",
+                "action": clean_tech[i],
+                "object": clean_tech[i+1],
+                "confidence": 0.90
+            })
+            
+        return {
+            "title": title,
+            "description": desc,
+            "category": candidate_item.get("Type", "GitHub Repo"),
+            "link": candidate_item.get("Link", ""),
+            "tech_tokens": set(clean_tech),
+            "capabilities": capabilities[:6],
+            "roles": list(set(clean_tech))[:4]
+        }
+
+    def candidate_is_eligible_stage_a(self, candidate_profile, intent_profile):
+        """
+        Module 4: Stage A Binary Hard Gate.
+        Strictly evaluates capability/role match. Candidates without genuine capability alignment
+        are REJECTED at MatchScore = 0.0%.
+        """
+        if not intent_profile or not intent_profile.get("capabilities"):
+            return False, 0.0, "IRRELEVANT: Sparse intent profile"
+
+        user_caps = intent_profile["capabilities"]
+        cand_text = f"{candidate_profile.get('title', '')} {candidate_profile.get('description', '')}".lower()
+        cand_tech = candidate_profile.get("tech_tokens", set())
+
+        # Stage A Capability Match Verification
+        max_sim = 0.0
+        matched_cap_names = []
+        
+        for u_cap in user_caps:
+            u_act = u_cap.get("action", "")
+            u_obj = u_cap.get("object", "")
+            
+            if (u_act and u_act in cand_tech) or (u_obj and u_obj in cand_tech) or (u_act and u_act in cand_text) or (u_obj and u_obj in cand_text):
+                max_sim = 1.0
+                matched_cap_names.append(u_cap["name"])
+                break
+
+            sim = self.capability_similarity(u_cap, {
+                "name": " ".join(list(cand_tech)[:3]),
+                "action": list(cand_tech)[0] if cand_tech else "",
+                "object": list(cand_tech)[1] if len(cand_tech) > 1 else ""
+            })
+            if sim >= 0.50:
+                max_sim = max(max_sim, sim)
+                matched_cap_names.append(u_cap["name"])
+
+        if max_sim >= 0.50:
+            return True, max_sim, f"ELIGIBLE: Verified capability match [{', '.join(matched_cap_names[:2])}]"
+        else:
+            return False, 0.0, "IRRELEVANT: No meaningful capability or role alignment with use case"
+
+    def rank_eligible_candidates_stage_b(self, candidate_item, intent_profile, stage_a_sim):
+        """
+        Module 5: Stage B Composite Relevance Ranking.
+        Formula: 30% Capability + 25% Task + 20% Role + 15% Evidence + 10% Practical Usefulness
+        """
+        cand_text = f"{candidate_item.get('Title', '')} {candidate_item.get('Description', '')}".lower()
+        
+        # 1. Capability Match (30%)
+        s_cap = stage_a_sim * 100.0
+        
+        # 2. Task Alignment (25%)
+        tasks = intent_profile.get("tasks", [])
+        matched_tasks = [t for t in tasks if any(w in cand_text for w in t.split() if w not in ENGLISH_STOPWORDS)]
+        s_task = (len(matched_tasks) / max(1, len(tasks))) * 100.0 if tasks else 50.0
+        
+        # 3. Role Alignment (20%)
+        roles = intent_profile.get("roles", [])
+        matched_roles = [r for r in roles if r in cand_text]
+        s_role = (len(matched_roles) / max(1, len(roles))) * 100.0 if roles else 50.0
+        
+        # 4. Evidence Quality (15%)
+        s_evidence = 90.0 if len(candidate_item.get("Description", "")) > 40 else 50.0
+        
+        # 5. Practical Usefulness (10%)
+        s_useful = 85.0 if candidate_item.get("Link") else 50.0
+        
+        # Stage B Weighted Composite Relevance Score Formula
+        score = (0.30 * s_cap) + (0.25 * s_task) + (0.20 * s_role) + (0.15 * s_evidence) + (0.10 * s_useful)
+        return min(100.0, round(score, 1))
+
+    def generate_evidence_audit_record(self, item, intent_profile, score):
+        """
+        Module 6: Evidence & Provenance Traceability Record.
+        """
+        title = item.get("Title", "")
+        desc = item.get("Description", "")
+        link = item.get("Link", "")
+        cat = item.get("Type", "GitHub Repo")
+        
+        tasks = intent_profile.get("tasks", [])
+        clean_matched = [t for t in tasks if any(w in desc.lower() for w in t.split() if w not in ENGLISH_STOPWORDS)]
+        matched_str = ", ".join(clean_matched[:2]) if clean_matched else "core technical requirements"
+        
+        tip = self.generate_role_tip(item, clean_matched)
+        
+        return {
+            "resource_title": title,
+            "category": cat,
+            "relevance_score": f"{score}%",
+            "source_url": link,
+            "evidence_quote": desc[:150],
+            "rationale": f"Directly provides capability alignment for [{matched_str}] required by your use case.",
+            "action_tip": tip
+        }
+
+    def score_item(self, item, keywords, subject_anchor="", intent_profile=None):
+        if not keywords:
+            return 0.0, [], ""
+
+        if not intent_profile:
+            intent_profile = self.extract_usecase_profile(subject_anchor or " ".join(keywords))
+
+        # Module 3: Candidate Profiler
+        cand_profile = self.profile_candidate(item)
+        
+        # Module 4: Stage A Hard Gate Check
+        is_eligible, stage_a_sim, reason = self.candidate_is_eligible_stage_a(cand_profile, intent_profile)
+        if not is_eligible:
+            return 0.0, [], f"IRRELEVANT: {reason}"
+
+        # Module 5: Stage B Composite Ranking
+        final_score = self.rank_eligible_candidates_stage_b(item, intent_profile, stage_a_sim)
+        
+        # Module 6: Audit Record & Tip
+        audit = self.generate_evidence_audit_record(item, intent_profile, final_score)
+        
+        matched_kw = list(cand_profile["tech_tokens"])[:3]
+        return final_score, matched_kw, audit["action_tip"]
 
     def generate_role_tip(self, item, matched_keywords):
         cat = item.get("Type", "")
@@ -532,9 +750,12 @@ class UniversalMultiRoleMatcher:
             return f"Actionable developer reference resource for [{matched_str}]."
 
     def match_scenario(self, scenario_text, all_updates_dict, top_k=5):
+        """
+        Module 7: Full 12-Source Precision Pipeline.
+        """
         keywords = self.extract_keywords(scenario_text)
         subject_anchor = self.extract_subject_anchor(scenario_text)
-        intent_profile = self.extract_intent_profile(scenario_text)
+        intent_profile = self.extract_usecase_profile(scenario_text)
         
         results = {}
         low_confidence_categories = []
@@ -545,7 +766,7 @@ class UniversalMultiRoleMatcher:
             
             scored_items = []
             for item in cat_items:
-                score, matched_kw, tip = self.score_item(item, keywords, subject_anchor)
+                score, matched_kw, tip = self.score_item(item, keywords, subject_anchor, intent_profile=intent_profile)
                 if score >= 25.0:
                     item_copy = dict(item)
                     item_copy["MatchScore"] = score
