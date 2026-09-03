@@ -534,6 +534,42 @@ class UniversalMultiRoleMatcher:
             "roles": list(set(clean_tech_list))[:4]
         }
 
+    def expand_word_synonyms(self, word):
+        """
+        Dynamically generates morphological variations, nominalizations, and synonym aliases
+        for ANY input word with ZERO hardcoded word mappings.
+        """
+        if not word:
+            return set()
+        w = word.lower().strip()
+        syns = {w}
+        
+        # Dynamic morphological stemming & nominalization rules
+        if len(w) > 3:
+            if w.endswith("e"):
+                syns.add(w[:-1] + "ing")
+                syns.add(w[:-1] + "ion")
+                syns.add(w[:-1] + "ation")
+                syns.add(w[:-1] + "or")
+                syns.add(w[:-1] + "er")
+            elif w.endswith("y"):
+                syns.add(w[:-1] + "ies")
+                syns.add(w[:-1] + "ied")
+            else:
+                syns.add(w + "ing")
+                syns.add(w + "ion")
+                syns.add(w + "ation")
+                syns.add(w + "er")
+                syns.add(w + "s")
+
+        # Dynamic skill_synonyms.json config map lookup
+        for canonical, aliases in self.synonyms.items():
+            if w == canonical or w in aliases:
+                syns.add(canonical)
+                syns.update(aliases)
+                
+        return syns
+
     def candidate_is_eligible_stage_a(self, candidate_profile, intent_profile):
         """
         Module 4: Stage A Role-Aware Binary Hard Gate.
@@ -549,17 +585,7 @@ class UniversalMultiRoleMatcher:
         cand_tech_list = candidate_profile.get("tech_tokens_list", [])
         cand_tech = candidate_profile.get("tech_tokens", set())
 
-        # Contradiction Gate: Domain/capability contradiction check
-        contradiction_terms = {
-            "cryptographic", "mutual authentication", "blockchain", "ego-vehicle", "motion planning",
-            "landscape painting", "torque", "legged locomotion", "secret management"
-        }
-        if any(ct in cand_text for ct in contradiction_terms):
-            user_prompt_text = " ".join([c.get("name", "") for c in user_caps] + intent_profile.get("problems", [])).lower()
-            if not any(ct in user_prompt_text for ct in contradiction_terms):
-                return False, 0.0, "IRRELEVANT: Domain/Capability Contradiction"
-
-        # Stage A Capability & Role Match Verification
+        # Dynamic Capability Match Verification
         generic_single_words = {"ai", "agent", "data", "model", "models", "app", "workload", "workloads", "file", "files"}
         max_sim = 0.0
         matched_cap_names = []
@@ -575,20 +601,9 @@ class UniversalMultiRoleMatcher:
                 matched_cap_names.append(u_cap["name"])
                 break
 
-            # 2. Dynamic Synonym Expansion for Action and Object
-            act_syns = set(self.get_anchor_synonyms(u_act)) if u_act else {u_act}
-            obj_syns = set(self.get_anchor_synonyms(u_obj)) if u_obj else {u_obj}
-            
-            if u_act == "transcribe":
-                act_syns.update(["transcription", "speech-to-text", "stt", "asr", "recognize"])
-            if u_obj in ["spoken", "audio", "voice"]:
-                obj_syns.update(["speech", "audio", "voice", "sound", "spoken"])
-            if u_act in ["annotate", "label"]:
-                act_syns.update(["annotation", "labeling", "tagging", "review"])
-            if u_act in ["cluster", "group"]:
-                act_syns.update(["clustering", "grouping", "categorization", "segmentation"])
-            if u_act in ["evaluate", "judge", "benchmark"]:
-                act_syns.update(["evaluation", "judging", "benchmarking", "testing", "scoring"])
+            # 2. Dynamic Synonym Expansion via Morphological Rules & Synonyms Config
+            act_syns = self.expand_word_synonyms(u_act) if u_act else {u_act}
+            obj_syns = self.expand_word_synonyms(u_obj) if u_obj else {u_obj}
 
             has_act_match = any(syn in cand_text for syn in act_syns if len(syn) > 2 and syn not in generic_single_words)
             has_obj_match = any(syn in cand_text for syn in obj_syns if len(syn) > 2 and syn not in generic_single_words)
@@ -608,21 +623,12 @@ class UniversalMultiRoleMatcher:
                 max_sim = max(max_sim, sim)
                 matched_cap_names.append(u_cap["name"])
 
-        # Role-Aware Stage A Check with Synonym Expansion
+        # Dynamic Role Alignment Verification using morphological expansion
         role_aligned = True
         if user_roles:
             role_aligned = False
             for r in user_roles:
-                r_syns = set(self.get_anchor_synonyms(r))
-                if r == "transcribe":
-                    r_syns.update(["transcription", "speech-to-text", "stt", "asr", "recognize"])
-                elif r in ["annotate", "label"]:
-                    r_syns.update(["annotation", "labeling", "tagging", "review"])
-                elif r in ["cluster", "group"]:
-                    r_syns.update(["clustering", "grouping", "categorization", "segmentation"])
-                elif r in ["evaluate", "judge", "benchmark"]:
-                    r_syns.update(["evaluation", "judging", "benchmarking", "testing", "scoring"])
-                    
+                r_syns = self.expand_word_synonyms(r)
                 if any(syn in cand_text for syn in r_syns if len(syn) > 2 and syn not in generic_single_words):
                     role_aligned = True
                     break
