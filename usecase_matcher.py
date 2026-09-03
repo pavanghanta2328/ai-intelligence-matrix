@@ -437,87 +437,21 @@ class UniversalMultiRoleMatcher:
             classification = "Tier1"
             reason = "Default Fallthrough: Matched general vocabulary -> Defaulted to Tier 1 Domain Framework Profile"
             
-        return classification, reason
-
-    def score_item(self, item, keywords, subject_anchor="", intent_profile=None):
-        if not keywords:
-            return 0.0, [], ""
-        
-        title = (item.get("Title") or "").lower()
-        desc = (item.get("Description") or "").lower()
-        p_title = (item.get("PageTitle") or "").lower()
-        p_desc = (item.get("PageDescription") or "").lower()
-        p_outline = " ".join(item.get("PageOutline") or []).lower()
-        
-        combined_text = f"{title} {desc} {p_title} {p_desc} {p_outline}"
-        
-        tier, reason = self.classify_item_tier(item, keywords, subject_anchor)
-        if tier == "Tier2":
-            w_anchor, w_keyphrase, w_unigram = 0.15, 0.60, 0.25
-        else:
-            w_anchor, w_keyphrase, w_unigram = 0.40, 0.45, 0.15
-
-        # Preamble & Generic Process Stopwords that MUST NOT drive relevance matching
-        generic_preambles = {
-            "end-to-end", "end to end", "e2e", "lifecycle", "orchestrates", "orchestration",
-            "creation", "production-ready", "production ready", "multi-step", "multi step",
-            "launch data", "execute multi", "produce production", "workflow wizard",
-            "build", "building", "create", "creating", "platform", "engine", "system", "solutions"
-        }
-
-        s_anchor = 0.0
-        if subject_anchor and subject_anchor.lower() not in generic_preambles:
-            anchor_syns = self.get_anchor_synonyms(subject_anchor)
-            if any(syn in combined_text for syn in anchor_syns if syn not in generic_preambles):
-                s_anchor = 100.0
-            else:
-                s_anchor = 0.0
-        else:
-            s_anchor = 0.0 if subject_anchor.lower() in generic_preambles else 100.0
-
-        # Filter generic preamble phrases from technical keywords
-        tech_keywords = [k for k in keywords if k.lower() not in ENGLISH_STOPWORDS and k.lower() not in generic_preambles]
-        keyphrases = [k for k in tech_keywords if len(k.split()) > 1]
-        unigrams = [k for k in tech_keywords if len(k.split()) == 1]
-        
-        matched_kw = []
-        matched_kp_count = 0
-        for kp in keyphrases:
-            kp_lower = kp.lower()
-            if kp_lower in combined_text:
-                matched_kw.append(kp)
-                matched_kp_count += 1
-            else:
-                for canonical, aliases in self.synonyms.items():
-                    if (kp_lower == canonical or kp_lower in aliases) and any(a in combined_text for a in aliases if a not in generic_preambles):
-                        matched_kw.append(kp)
-                        matched_kp_count += 1
-                        break
-                        
-        s_keyphrase = (matched_kp_count / max(1, len(keyphrases))) * 100.0 if keyphrases else 0.0
-
-        matched_uni_count = 0
-        for uni in unigrams:
-            uni_lower = uni.lower()
-            if uni_lower in combined_text:
-                matched_kw.append(uni)
-                matched_uni_count += 1
-        
-        s_unigram = (matched_uni_count / max(1, len(unigrams))) * 100.0 if unigrams else 0.0
-
     def suppress_generic_signals(self, tokens):
         """
-        Module 2: Explicitly suppresses generic architectural adjectives and container terms
-        (e.g. platform, system, engine, orchestration, end-to-end, creation, dataset, solutions, tool, framework).
+        Module 2: Explicitly suppresses generic architectural adjectives, container terms,
+        preamble action verbs, and pronouns (e.g. platform, system, engine, orchestration,
+        end-to-end, creation, dataset, i, want, need, build, create, trying).
         """
         generic_terms = {
             "end-to-end", "end to end", "e2e", "lifecycle", "orchestrates", "orchestration",
             "creation", "production-ready", "production ready", "multi-step", "multi step",
             "launch data", "execute multi", "produce production", "workflow wizard",
             "build", "building", "create", "creating", "platform", "engine", "system",
-            "solutions", "solution", "tool", "tools", "framework", "frameworks", "dataset", "datasets"
+            "solutions", "solution", "tool", "tools", "framework", "frameworks", "dataset", "datasets",
+            "i", "we", "want", "need", "trying", "looking", "wanted", "build", "building", "create", "creating"
         }
-        return [t for t in tokens if t.lower() not in generic_terms and t.lower() not in ENGLISH_STOPWORDS]
+        return [t for t in tokens if t.lower() not in generic_terms and t.lower() not in ENGLISH_STOPWORDS and t.lower() not in ACTION_VERB_STOPLIST]
 
     def extract_usecase_profile(self, text):
         """
@@ -540,8 +474,6 @@ class UniversalMultiRoleMatcher:
         artifacts = set()
         constraints = set()
         problems = []
-
-        raw_words = re.findall(r'\b[a-zA-Z0-9\-]+\b', text_lower)
 
         for clause in clauses:
             raw_tokens = re.findall(r'\b[a-zA-Z0-9\-]+\b', clause)
@@ -618,18 +550,29 @@ class UniversalMultiRoleMatcher:
         cand_tech = candidate_profile.get("tech_tokens", set())
 
         # Stage A Capability Match Verification
+        generic_single_words = {"ai", "agent", "data", "model", "models", "app", "workload", "workloads", "file", "files"}
         max_sim = 0.0
         matched_cap_names = []
         
         for u_cap in user_caps:
-            u_act = u_cap.get("action", "")
-            u_obj = u_cap.get("object", "")
+            u_act = u_cap.get("action", "").lower()
+            u_obj = u_cap.get("object", "").lower()
+            u_name = u_cap.get("name", "").lower()
             
-            if (u_act and u_act in cand_tech) or (u_obj and u_obj in cand_tech) or (u_act and u_act in cand_text) or (u_obj and u_obj in cand_text):
+            # 1. Direct compound capability name match (e.g. "monitors_customer" or "segment_lung")
+            if u_name and (u_name in cand_text or u_name.replace("_", " ") in cand_text):
                 max_sim = 1.0
                 matched_cap_names.append(u_cap["name"])
                 break
+                
+            # 2. Both action AND object must be present for multi-word capability match (unless action/object is generic)
+            if u_act and u_obj and u_act not in generic_single_words and u_obj not in generic_single_words:
+                if (u_act in cand_tech or u_act in cand_text) and (u_obj in cand_tech or u_obj in cand_text):
+                    max_sim = 1.0
+                    matched_cap_names.append(u_cap["name"])
+                    break
 
+            # 3. Two-dimensional similarity calculation
             sim = self.capability_similarity(u_cap, {
                 "name": " ".join(list(cand_tech)[:3]),
                 "action": list(cand_tech)[0] if cand_tech else "",
