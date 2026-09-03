@@ -121,11 +121,11 @@ def _inject_streamlit_api_route():
                                 for item in live_items:
                                     score, matched_kw, tip = scenario_matcher.score_item(item, result["keywords"], result.get("subject_anchor", ""), intent_profile=result.get("intent_profile"))
                                     if score >= 25.0:
-                                    item_copy = dict(item)
-                                    item_copy["MatchScore"] = score
-                                    item_copy["MatchedKeywords"] = matched_kw or result["keywords"][:2]
-                                    item_copy["IntegrationTip"] = tip
-                                    scored_items.append(item_copy)
+                                        item_copy = dict(item)
+                                        item_copy["MatchScore"] = score
+                                        item_copy["MatchedKeywords"] = matched_kw or result["keywords"][:2]
+                                        item_copy["IntegrationTip"] = tip
+                                        scored_items.append(item_copy)
                                 if scored_items:
                                     result["recommendations"][cat] = scored_items[:top_k]
 
