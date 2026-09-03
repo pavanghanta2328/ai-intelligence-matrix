@@ -549,6 +549,16 @@ class UniversalMultiRoleMatcher:
         cand_text = f"{candidate_profile.get('title', '')} {candidate_profile.get('description', '')}".lower()
         cand_tech = candidate_profile.get("tech_tokens", set())
 
+        # Contradiction Gate: Domain/capability contradiction check
+        contradiction_terms = {
+            "cryptographic", "mutual authentication", "blockchain", "ego-vehicle", "motion planning",
+            "landscape painting", "torque", "legged locomotion", "secret management"
+        }
+        if any(ct in cand_text for ct in contradiction_terms):
+            user_prompt_text = " ".join([c.get("name", "") for c in user_caps] + intent_profile.get("problems", [])).lower()
+            if not any(ct in user_prompt_text for ct in contradiction_terms):
+                return False, 0.0, "IRRELEVANT: Domain/Capability Contradiction"
+
         # Stage A Capability Match Verification
         generic_single_words = {"ai", "agent", "data", "model", "models", "app", "workload", "workloads", "file", "files"}
         max_sim = 0.0
@@ -559,18 +569,36 @@ class UniversalMultiRoleMatcher:
             u_obj = u_cap.get("object", "").lower()
             u_name = u_cap.get("name", "").lower()
             
-            # 1. Direct compound capability name match (e.g. "monitors_customer" or "segment_lung")
-            if u_name and (u_name in cand_text or u_name.replace("_", " ") in cand_text):
+            # 1. Direct compound capability name match or underscore replacement
+            if u_name and (u_name in cand_text or u_name.replace("_", " ") in cand_text or u_name.replace("_", "-") in cand_text):
                 max_sim = 1.0
                 matched_cap_names.append(u_cap["name"])
                 break
-                
-            # 2. Both action AND object must be present for multi-word capability match (unless action/object is generic)
-            if u_act and u_obj and u_act not in generic_single_words and u_obj not in generic_single_words:
-                if (u_act in cand_tech or u_act in cand_text) and (u_obj in cand_tech or u_obj in cand_text):
-                    max_sim = 1.0
-                    matched_cap_names.append(u_cap["name"])
-                    break
+
+            # 2. Dynamic Synonym Expansion for Action and Object
+            act_syns = set(self.get_anchor_synonyms(u_act)) if u_act else {u_act}
+            obj_syns = set(self.get_anchor_synonyms(u_obj)) if u_obj else {u_obj}
+            
+            # Add semantic technical domain synonyms
+            if u_act == "transcribe":
+                act_syns.update(["transcription", "speech-to-text", "stt", "asr", "recognize"])
+            if u_obj in ["spoken", "audio", "voice"]:
+                obj_syns.update(["speech", "audio", "voice", "sound", "spoken"])
+            if u_act in ["annotate", "label"]:
+                act_syns.update(["annotation", "labeling", "tagging", "review"])
+            if u_act in ["cluster", "group"]:
+                act_syns.update(["clustering", "grouping", "categorization", "segmentation"])
+            if u_act in ["evaluate", "judge", "benchmark"]:
+                act_syns.update(["evaluation", "judging", "benchmarking", "testing", "scoring"])
+
+            # Check if any action synonym and any object synonym exist in candidate text
+            has_act_match = any(syn in cand_text for syn in act_syns if len(syn) > 2 and syn not in generic_single_words)
+            has_obj_match = any(syn in cand_text for syn in obj_syns if len(syn) > 2 and syn not in generic_single_words)
+
+            if has_act_match and has_obj_match:
+                max_sim = 1.0
+                matched_cap_names.append(u_cap["name"])
+                break
 
             # 3. Two-dimensional similarity calculation
             sim = self.capability_similarity(u_cap, {
