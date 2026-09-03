@@ -127,12 +127,13 @@ def _inject_streamlit_api_route():
                             if live_items:
                                 scored_items = []
                                 for item in live_items:
-                                    score, matched_kw, tip = scenario_matcher.score_item(item, result["keywords"], result.get("subject_anchor", ""), intent_profile=result.get("intent_profile"))
+                                    score, matched_kw, audit = scenario_matcher.score_item(item, result["keywords"], result.get("subject_anchor", ""), intent_profile=result.get("intent_profile"))
                                     if score >= 25.0:
                                         item_copy = dict(item)
                                         item_copy["MatchScore"] = score
                                         item_copy["MatchedKeywords"] = matched_kw or result["keywords"][:2]
-                                        item_copy["IntegrationTip"] = tip
+                                        item_copy["IntegrationTip"] = audit["action_tip"] if isinstance(audit, dict) else audit
+                                        item_copy["Audit"] = audit if isinstance(audit, dict) else {}
                                         scored_items.append(item_copy)
                                 if scored_items:
                                     result["recommendations"][cat] = scored_items[:top_k]
@@ -695,15 +696,28 @@ else:
                         if live_items:
                             scored = []
                             for it in live_items:
-                                sc, kw, tip = scenario_matcher.score_item(it, rec_result["keywords"], rec_result.get("subject_anchor", ""))
+                                sc, kw, audit = scenario_matcher.score_item(it, rec_result["keywords"], rec_result.get("subject_anchor", ""))
                                 if sc >= 15.0:
                                     it_copy = dict(it)
                                     it_copy["MatchScore"] = sc
                                     it_copy["MatchedKeywords"] = kw
-                                    it_copy["IntegrationTip"] = tip
+                                    it_copy["IntegrationTip"] = audit["action_tip"] if isinstance(audit, dict) else audit
+                                    it_copy["Audit"] = audit if isinstance(audit, dict) else {}
                                     scored.append(it_copy)
                             scored.sort(key=lambda x: x["MatchScore"], reverse=True)
                             rec_result["recommendations"][low_cat] = scored[:5]
+
+                    # Stage 14: Project Understanding Header
+                    intent = rec_result.get("intent_profile", {})
+                    caps_str = ", ".join([c.get("name", "") for c in intent.get("capabilities", []) if c.get("name")])
+                    roles_str = ", ".join(intent.get("roles", []))
+                    st.markdown(f"""
+                    <div style="background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #10b981;">
+                        <h5 style="margin-top: 0; color: #f8fafc; font-size: 1.1rem; margin-bottom: 8px;">🧠 Project Understanding</h5>
+                        <p style="margin: 4px 0; color: #cbd5e1; font-size: 0.95rem;"><strong>Core Capabilities:</strong> {caps_str or 'None detected'}</p>
+                        <p style="margin: 4px 0; color: #cbd5e1; font-size: 0.95rem;"><strong>Relevant Roles:</strong> {roles_str or 'General Developer'}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
                     # Render 12 category accordions
                     recs = rec_result.get("recommendations", {})
@@ -718,9 +732,15 @@ else:
                                 link = item.get("Link", "#")
                                 title = item.get("Title", "Untitled")
                                 desc = item.get("Description", "")
+                                audit = item.get("Audit", {})
+                                cap = audit.get("matched_capability", "General Fit")
+                                status = audit.get("claim_status", "UNVERIFIED")
+                                quote = audit.get("evidence_quote", "No specific evidence matched.")
+                                
+                                status_color = "#10b981" if status == "VERIFIED" else ("#f59e0b" if status == "PARTIAL" else "#ef4444")
                                 
                                 st.markdown(f"""
-                                <div style="background: #1e293b; border: 1px solid #334155; border-left: 5px solid #0284c7; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);">
+                                <div style="background: #1e293b; border: 1px solid #334155; border-left: 5px solid {status_color}; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);">
                                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
                                         <a href="{link}" target="_blank" style="color: #38bdf8; font-size: 1.15rem; font-weight: 700; text-decoration: none; display: flex; align-items: center; gap: 6px;">
                                             🔗 {title}
@@ -732,13 +752,25 @@ else:
                                     <p style="color: #f1f5f9; font-size: 0.95rem; line-height: 1.6; margin-bottom: 12px; font-weight: 400;">
                                         {desc}
                                     </p>
-                                    <div style="background: #0f172a; border-left: 4px solid #f59e0b; padding: 10px 14px; border-radius: 6px; margin-top: 8px;">
-                                        <span style="color: #fbbf24; font-weight: 700; font-size: 0.88rem; display: block; margin-bottom: 2px;">
-                                            💡 Solution Architect Tip & Integration Guide:
-                                        </span>
-                                        <span style="color: #f8fafc; font-size: 0.88rem; line-height: 1.5; font-weight: 500;">
-                                            {tip}
-                                        </span>
+                                    
+                                    <div style="background: #0f172a; padding: 12px; border-radius: 6px; margin-top: 12px; border: 1px solid #334155;">
+                                        <div style="margin-bottom: 8px;">
+                                            <span style="color: #94a3b8; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Why This Matches</span>
+                                        </div>
+                                        <div style="display: flex; gap: 10px; margin-bottom: 8px; font-size: 0.85rem;">
+                                            <span style="background: #334155; color: #f8fafc; padding: 2px 8px; border-radius: 4px; font-weight: 500;">⚙️ {cap}</span>
+                                            <span style="background: {status_color}33; color: {status_color}; padding: 2px 8px; border-radius: 4px; font-weight: 700;">✓ {status}</span>
+                                        </div>
+                                        <div style="color: #cbd5e1; font-size: 0.88rem; font-style: italic; border-left: 2px solid #475569; padding-left: 10px; margin-bottom: 10px;">
+                                            "{quote}"
+                                        </div>
+                                        
+                                        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #334155;">
+                                            <span style="color: #94a3b8; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 6px; font-weight: 600;">Best Use / Action</span>
+                                            <span style="color: #f8fafc; font-size: 0.9rem; line-height: 1.5; font-weight: 500;">
+                                                {tip}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                                 """, unsafe_allow_html=True)

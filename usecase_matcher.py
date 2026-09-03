@@ -821,7 +821,7 @@ class UniversalMultiRoleMatcher:
         audit = self.generate_evidence_audit_record(item, intent_profile, final_score)
         
         matched_kw = list(cand_profile["tech_tokens"])[:3]
-        return final_score, matched_kw, audit["action_tip"]
+        return final_score, matched_kw, audit
 
     def generate_role_tip(self, item, matched_keywords):
         cat = item.get("Type", "")
@@ -1365,14 +1365,15 @@ class UniversalMultiRoleMatcher:
 
             scored_items = []
             for item in cat_items:
-                score, matched_kw, tip = self.score_item(item, keywords, subject_anchor, intent_profile=intent_profile)
+                score, matched_kw, audit = self.score_item(item, keywords, subject_anchor, intent_profile=intent_profile)
                 if score >= 25.0:
                     total_eligible += 1
                     per_category_stats[category]["stage_a_eligible"] += 1
                     item_copy = dict(item)
                     item_copy["MatchScore"] = score
                     item_copy["MatchedKeywords"] = matched_kw
-                    item_copy["IntegrationTip"] = tip
+                    item_copy["IntegrationTip"] = audit["action_tip"] if isinstance(audit, dict) else audit
+                    item_copy["Audit"] = audit if isinstance(audit, dict) else {}
                     scored_items.append(item_copy)
                 else:
                     total_rejected += 1
