@@ -913,27 +913,142 @@ class UniversalMultiRoleMatcher:
 
         return relationships
 
+    # ------------------------------------------------------------------
+    # Stage 5: Multi-Intent Ecosystem Query Generation
+    # ------------------------------------------------------------------
+
+    # Three generic, domain-agnostic intent families.
+    # Each family represents a fundamentally different search intent:
+    #   artifact     — find a concrete tool/library that implements the capability
+    #   implementation — find code, SDK, or tutorial showing HOW to use it
+    #   research     — find papers, benchmarks, or deep analysis about it
+    #
+    # No domain-specific knowledge is encoded here. The template slots
+    # ("{phrase}") are filled at runtime with the normalized capability phrase.
+    _ECOSYSTEM_INTENT_MATRIX = {
+        # intent_family: (artifact, implementation, research)
+        "GitHub Repo": [
+            "{phrase} tool framework library",
+            "{phrase} implementation open-source",
+            "{phrase} benchmark evaluation harness",
+        ],
+        "PyPI Release": [
+            "{phrase} sdk package",
+            "{phrase} python api client",
+            "{phrase} toolkit utilities",
+        ],
+        "arXiv Research Paper": [
+            "{phrase} architecture benchmark",
+            "{phrase} survey empirical evaluation",
+            "{phrase} method systematic review",
+        ],
+        "Hugging Face Model": [
+            "{phrase} pretrained model",
+            "{phrase} fine-tuned inference",
+            "{phrase} transformer checkpoint",
+        ],
+        "Hugging Face Dataset": [
+            "{phrase} benchmark dataset",
+            "{phrase} evaluation corpus",
+            "{phrase} training ground-truth",
+        ],
+        "YouTube Video": [
+            "{phrase} tutorial walkthrough",
+            "{phrase} implementation demo",
+            "{phrase} paper explained",
+        ],
+        "Reddit Discussion": [
+            "{phrase} best practices",
+            "{phrase} tools comparison",
+            "{phrase} community discussion",
+        ],
+        "Product Hunt Launch": [
+            "{phrase} product tool",
+            "{phrase} platform launch",
+            "{phrase} saas application",
+        ],
+        "Corporate Blog": [
+            "{phrase} engineering guide",
+            "{phrase} case study analysis",
+            "{phrase} best practices tutorial",
+        ],
+        "Medium & Dev Community": [
+            "{phrase} how to explained",
+            "{phrase} engineering deep dive",
+            "{phrase} developer tutorial guide",
+        ],
+        "AI Course": [
+            "{phrase} course curriculum",
+            "{phrase} learning tutorial",
+            "{phrase} bootcamp certification",
+        ],
+        "Prompt & Guardrail Templates": [
+            "{phrase} prompt template",
+            "{phrase} system prompt specification",
+            "{phrase} guardrail safety constraint",
+        ],
+    }
+
+    @staticmethod
+    def _dedup_query_tokens(phrase):
+        """Remove repeated tokens from a query phrase while preserving word order.
+        Prevents relationship enrichment from creating 'annotation annotation' duplicates."""
+        seen = set()
+        result = []
+        for tok in phrase.split():
+            tok_lower = tok.lower()
+            if tok_lower not in seen:
+                seen.add(tok_lower)
+                result.append(tok)
+        return " ".join(result)
+
+    @staticmethod
+    def _jaccard_similarity(a_tokens, b_tokens):
+        """Compute Jaccard similarity between two token sets."""
+        if not a_tokens or not b_tokens:
+            return 0.0
+        intersection = len(a_tokens & b_tokens)
+        union = len(a_tokens | b_tokens)
+        return intersection / union if union > 0 else 0.0
+
+    def _deduplicate_queries(self, queries, threshold=0.80):
+        """Remove near-duplicate queries within a list.
+        Two queries are near-duplicates if their token Jaccard similarity >= threshold."""
+        unique = []
+        unique_token_sets = []
+        for q in queries:
+            q_toks = frozenset(q.lower().split())
+            is_dup = any(
+                self._jaccard_similarity(q_toks, existing) >= threshold
+                for existing in unique_token_sets
+            )
+            if not is_dup:
+                unique.append(q)
+                unique_token_sets.append(q_toks)
+        return unique
+
     def generate_ecosystem_queries(self, core_capabilities, relationships=None):
         """
-        V3 Module B: Ecosystem Query Generation Engine.
-        Converts normalized core capabilities into targeted ecosystem search queries.
-        When capability relationships are provided, adds contextual enrichment to queries:
-          e.g. workforce_annotation supports task_routing
-               → "workforce annotation task routing tool"
-        Query expansion broadens discovery while preserving frozen V2 Stage A relevance verification.
-        """
-        queries = {
-            "GitHub Repo": [],
-            "PyPI Release": [],
-            "arXiv Research Paper": [],
-            "Hugging Face Model": [],
-            "Hugging Face Dataset": []
-        }
+        Stage 5: Multi-Intent Ecosystem Query Generation Engine.
 
-        # Build a lookup: source_cap_name -> [target cap objects for enrichment]
-        # Only use "supports" and "enables" relationships to enrich queries
-        # (these indicate A produces something relevant to B's domain)
-        enrichment_context = {}  # cap_name -> list of related object phrases
+        For every core capability, generates >= 3 semantically distinct query intents
+        per ecosystem category using the _ECOSYSTEM_INTENT_MATRIX. Query intent families:
+          - artifact:        find a tool/library implementing the capability
+          - implementation:  find SDK, tutorial, or code showing HOW to use it
+          - research:        find papers, benchmarks, or deep analysis about it
+
+        Relationship context (Stage 4) enriches base queries but never replaces them.
+        Duplicate tokens from relationship enrichment are cleaned. Near-duplicate queries
+        are removed using Jaccard similarity (threshold 0.80).
+
+        Coverage invariant: every core capability appears in >= 1 query per category.
+        """
+        # Initialise an empty list for ALL 12 categories
+        queries = {cat: [] for cat in ALL_12_CATEGORIES}
+
+        # Build relationship enrichment lookup:
+        # Only "supports" and "enables" are used (A produces what B acts on).
+        enrichment_context = {}
         if relationships:
             for rel in relationships:
                 if rel["relation"] in ("supports", "enables"):
@@ -949,21 +1064,31 @@ class UniversalMultiRoleMatcher:
             if not act or not obj:
                 continue
 
-            clean_phrase = f"{act} {obj}".replace("_", " ")
+            base_phrase = f"{act} {obj}".replace("_", " ").strip()
 
-            # Build context suffix from relationships (max 2 tokens to avoid over-specificity)
+            # Build relationship-enriched phrase (max 2 context tokens)
             ctx_tokens = enrichment_context.get(cap_name, [])
-            ctx_suffix = " ".join(ctx_tokens[:2]) if ctx_tokens else ""
-            enriched_phrase = f"{clean_phrase} {ctx_suffix}".strip() if ctx_suffix else clean_phrase
+            if ctx_tokens:
+                # Append up to 2 unique relationship tokens
+                enriched = f"{base_phrase} {' '.join(ctx_tokens[:2])}"
+                enriched_phrase = self._dedup_query_tokens(enriched)
+            else:
+                enriched_phrase = base_phrase
 
-            # Category-specific targeted query generation
-            queries["GitHub Repo"].append(f"{enriched_phrase} tool framework")
-            queries["PyPI Release"].append(f"{enriched_phrase} sdk package")
-            queries["arXiv Research Paper"].append(f"{enriched_phrase} architecture benchmark")
-            queries["Hugging Face Model"].append(f"{enriched_phrase} inference model")
-            queries["Hugging Face Dataset"].append(f"{enriched_phrase} evaluation ground-truth dataset")
+            # Generate 3 intent variants per category from the matrix
+            for cat, intent_templates in self._ECOSYSTEM_INTENT_MATRIX.items():
+                for template in intent_templates:
+                    raw_query = template.format(phrase=enriched_phrase)
+                    clean_query = self._dedup_query_tokens(raw_query)
+                    if clean_query not in queries[cat]:
+                        queries[cat].append(clean_query)
+
+        # Near-duplicate deduplication per category
+        for cat in queries:
+            queries[cat] = self._deduplicate_queries(queries[cat])
 
         return queries
+
 
     def match_scenario(self, scenario_text, all_updates_dict, top_k=5):
         """
