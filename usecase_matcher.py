@@ -796,10 +796,130 @@ class UniversalMultiRoleMatcher:
 
         return core_semantic, suppressed_noise
 
-    def generate_ecosystem_queries(self, core_capabilities):
+    # ------------------------------------------------------------------
+    # Stage 4: Capability Relationship Model
+    # ------------------------------------------------------------------
+
+    def _capability_tokens(self, cap):
+        """Return a deduplicated, lowercased set of meaningful tokens from a capability dict.
+        Includes action + object + domain + name to maximise relationship surface."""
+        raw = (
+            f"{cap.get('action', '')} "
+            f"{cap.get('object', '')} "
+            f"{cap.get('domain', '')} "
+            f"{cap.get('name', '')}"
+        )
+        return {t for t in re.split(r'[_\s\-]+', raw.lower()) if len(t) > 2 and t not in ENGLISH_STOPWORDS}
+
+    def _stem_simple(self, word):
+        """Minimal rule-based morphological stemmer — strips common derivational suffixes."""
+        for suffix in ('ation', 'ment', 'ing', 'tion', 'ion', 'ive', 'ize', 'ise', 'ed', 'er', 'al', 'or'):
+            if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+                return word[:-len(suffix)]
+        return word
+
+    def build_capability_relationships(self, core_capabilities):
+        """
+        Stage 4: Generic, data-driven Capability Relationship Model.
+
+        Derives directed relationships between extracted capabilities using
+        purely algorithmic token overlap — zero domain-specific hardcoding.
+
+        Relationship types:
+          supports   — A's object tokens appear in B's action tokens
+                       (A produces something B acts on)
+          depends_on — A's action tokens contain B's object tokens
+                       (A acts on what B produces)
+          enables    — stem(A's object) matches stem(B's action)
+                       (A's outcome unlocks B's process)
+          related_to — A and B share object-space tokens
+                       (parallel objectives, same domain surface)
+
+        Returns:
+          List of relationship dicts:
+            {"source": cap_name_A, "relation": "supports|depends_on|enables|related_to",
+             "target": cap_name_B, "context_tokens": [shared token list]}
+        """
+        if len(core_capabilities) < 2:
+            return []
+
+        relationships = []
+        seen_pairs = set()  # prevent duplicate (A, B) and reflexive entries
+
+        for i, cap_a in enumerate(core_capabilities):
+            a_name = cap_a.get("name", "")
+            # Include domain in action/object token sets to maximise relationship surface
+            a_action_toks = {t for t in re.split(r'[_\s\-]+', cap_a.get('action', '').lower()) if len(t) > 2 and t not in ENGLISH_STOPWORDS}
+            a_object_toks = {
+                t for t in re.split(
+                    r'[_\s\-]+',
+                    f"{cap_a.get('object', '')} {cap_a.get('domain', '')}".lower()
+                ) if len(t) > 2 and t not in ENGLISH_STOPWORDS
+            }
+            a_obj_stems = {self._stem_simple(t) for t in a_object_toks}
+
+            for j, cap_b in enumerate(core_capabilities):
+                if i == j:
+                    continue
+                b_name = cap_b.get("name", "")
+                pair_key = tuple(sorted([a_name, b_name]))
+                b_action_toks = {t for t in re.split(r'[_\s\-]+', cap_b.get('action', '').lower()) if len(t) > 2 and t not in ENGLISH_STOPWORDS}
+                b_object_toks = {
+                    t for t in re.split(
+                        r'[_\s\-]+',
+                        f"{cap_b.get('object', '')} {cap_b.get('domain', '')}".lower()
+                    ) if len(t) > 2 and t not in ENGLISH_STOPWORDS
+                }
+                b_action_stems = {self._stem_simple(t) for t in b_action_toks}
+
+                # Rule 1: supports — A's object feeds into B's action
+                supports_overlap = a_object_toks & b_action_toks
+                if supports_overlap and (a_name, b_name, "supports") not in seen_pairs:
+                    seen_pairs.add((a_name, b_name, "supports"))
+                    relationships.append({
+                        "source": a_name, "relation": "supports", "target": b_name,
+                        "context_tokens": sorted(supports_overlap)
+                    })
+                    continue
+
+                # Rule 2: depends_on — A's action acts on what B's object produces
+                depends_overlap = a_action_toks & b_object_toks
+                if depends_overlap and (a_name, b_name, "depends_on") not in seen_pairs:
+                    seen_pairs.add((a_name, b_name, "depends_on"))
+                    relationships.append({
+                        "source": a_name, "relation": "depends_on", "target": b_name,
+                        "context_tokens": sorted(depends_overlap)
+                    })
+                    continue
+
+                # Rule 3: enables — stem(A's object) matches stem(B's action)
+                enables_stem_overlap = a_obj_stems & b_action_stems
+                if enables_stem_overlap and (a_name, b_name, "enables") not in seen_pairs:
+                    seen_pairs.add((a_name, b_name, "enables"))
+                    relationships.append({
+                        "source": a_name, "relation": "enables", "target": b_name,
+                        "context_tokens": sorted(enables_stem_overlap)
+                    })
+                    continue
+
+                # Rule 4: related_to — shared object-space tokens (symmetric, record once)
+                related_overlap = a_object_toks & b_object_toks
+                if related_overlap and pair_key not in seen_pairs:
+                    seen_pairs.add(pair_key)
+                    relationships.append({
+                        "source": a_name, "relation": "related_to", "target": b_name,
+                        "context_tokens": sorted(related_overlap)
+                    })
+
+        return relationships
+
+    def generate_ecosystem_queries(self, core_capabilities, relationships=None):
         """
         V3 Module B: Ecosystem Query Generation Engine.
         Converts normalized core capabilities into targeted ecosystem search queries.
+        When capability relationships are provided, adds contextual enrichment to queries:
+          e.g. workforce_annotation supports task_routing
+               → "workforce annotation task routing tool"
         Query expansion broadens discovery while preserving frozen V2 Stage A relevance verification.
         """
         queries = {
@@ -809,21 +929,39 @@ class UniversalMultiRoleMatcher:
             "Hugging Face Model": [],
             "Hugging Face Dataset": []
         }
-        
+
+        # Build a lookup: source_cap_name -> [target cap objects for enrichment]
+        # Only use "supports" and "enables" relationships to enrich queries
+        # (these indicate A produces something relevant to B's domain)
+        enrichment_context = {}  # cap_name -> list of related object phrases
+        if relationships:
+            for rel in relationships:
+                if rel["relation"] in ("supports", "enables"):
+                    src = rel["source"]
+                    tgt_tokens = rel.get("context_tokens", [])
+                    if tgt_tokens:
+                        enrichment_context.setdefault(src, []).extend(tgt_tokens)
+
         for c in core_capabilities:
             act = c.get("action", "")
             obj = c.get("object", "")
+            cap_name = c.get("name", "")
             if not act or not obj:
                 continue
-                
+
             clean_phrase = f"{act} {obj}".replace("_", " ")
-            
+
+            # Build context suffix from relationships (max 2 tokens to avoid over-specificity)
+            ctx_tokens = enrichment_context.get(cap_name, [])
+            ctx_suffix = " ".join(ctx_tokens[:2]) if ctx_tokens else ""
+            enriched_phrase = f"{clean_phrase} {ctx_suffix}".strip() if ctx_suffix else clean_phrase
+
             # Category-specific targeted query generation
-            queries["GitHub Repo"].append(f"{clean_phrase} tool framework")
-            queries["PyPI Release"].append(f"{clean_phrase} sdk package")
-            queries["arXiv Research Paper"].append(f"{clean_phrase} architecture benchmark")
-            queries["Hugging Face Model"].append(f"{clean_phrase} inference model")
-            queries["Hugging Face Dataset"].append(f"{clean_phrase} evaluation ground-truth dataset")
+            queries["GitHub Repo"].append(f"{enriched_phrase} tool framework")
+            queries["PyPI Release"].append(f"{enriched_phrase} sdk package")
+            queries["arXiv Research Paper"].append(f"{enriched_phrase} architecture benchmark")
+            queries["Hugging Face Model"].append(f"{enriched_phrase} inference model")
+            queries["Hugging Face Dataset"].append(f"{enriched_phrase} evaluation ground-truth dataset")
 
         return queries
 
@@ -835,9 +973,10 @@ class UniversalMultiRoleMatcher:
         subject_anchor = self.extract_subject_anchor(scenario_text)
         intent_profile = self.extract_usecase_profile(scenario_text)
         
-        # V3 Normalization & Query Generation
+        # V3 Normalization → Relationship Graph → Query Generation
         core_caps, suppressed_noise = self.normalize_capabilities(intent_profile)
-        generated_queries = self.generate_ecosystem_queries(core_caps)
+        capability_relationships = self.build_capability_relationships(core_caps)
+        generated_queries = self.generate_ecosystem_queries(core_caps, relationships=capability_relationships)
         
         results = {}
         low_confidence_categories = []
@@ -876,6 +1015,7 @@ class UniversalMultiRoleMatcher:
             "raw_capabilities_count": len(intent_profile.get("capabilities", [])),
             "core_semantic_capabilities": [c.get("name") for c in core_caps],
             "suppressed_context_noise": suppressed_noise,
+            "capability_relationships": capability_relationships,
             "generated_queries": generated_queries,
             "total_candidates_discovered": total_discovered,
             "stage_a_eligible_count": total_eligible,

@@ -493,29 +493,33 @@ def get_prompt_template_updates():
         print(f"Error fetching dynamic prompt templates: {e}")
     return templates
 
+
 def extract_fallback_subqueries(query_text, category_name="", capability_queries=None):
     """
     Stage 6: Dynamic Query Generator.
     Priority 1: Use pre-generated capability-driven queries from generate_ecosystem_queries().
     Priority 2: Dynamically extract from raw query_text when capability_queries unavailable.
+
+    Returns: (subqueries: list[str], discovery_mode: str)
+      discovery_mode = "v3_capability_driven" | "legacy_dynamic_text"
     """
     # Priority 1 — Use pre-generated structured capability queries (V3 path)
     if capability_queries and isinstance(capability_queries, list) and len(capability_queries) > 0:
         # URL-encode each generated query phrase for the target API
         import urllib.parse
         encoded = [urllib.parse.quote_plus(q.strip()) for q in capability_queries if q.strip()]
-        return encoded[:6] or ["ai"]
+        return encoded[:6] or ["ai"], "v3_capability_driven"
 
     # Priority 2 — Dynamically extract from raw text (legacy fallback path)
     if not query_text:
-        return ["ai"]
+        return ["ai"], "legacy_dynamic_text"
     from usecase_matcher import ENGLISH_STOPWORDS, ACTION_VERB_STOPLIST, scenario_matcher
     
     # 1. Dynamically extract the Primary Subject Anchor from scenario text
     subject_anchor = scenario_matcher.extract_subject_anchor(query_text)
     
     # 2. Extract Action Clauses & Modifiers
-    clauses = re.split(r'[,;\.\n]| and | that | with | for | to | by | from | of | based on | using | via ', query_text.lower())
+    clauses = re.split(r'[,;\\.\\n]| and | that | with | for | to | by | from | of | based on | using | via ', query_text.lower())
     generic_unigrams = {"ai", "driven", "data", "web", "online", "tool", "system", "app", "application", "thought", "thouight", "think", "build", "using", "create", "looking", "help", "need", "want"}
     
     subqueries = []
@@ -532,7 +536,7 @@ def extract_fallback_subqueries(query_text, category_name="", capability_queries
             if phrase_str and phrase_str not in subqueries:
                 subqueries.append(phrase_str)
                 
-    return subqueries[:4] or ["ai"]
+    return subqueries[:4] or ["ai"], "legacy_dynamic_text"
 
 # Live Fallback Handler for ALL 12 categories dynamically
 def fetch_live_category_fallback(category_name, query="", capability_queries=None):
@@ -542,7 +546,13 @@ def fetch_live_category_fallback(category_name, query="", capability_queries=Non
     If provided, these are used directly (V3 dynamic path) instead of deriving queries from raw text.
     """
     import urllib.parse
-    subqueries = extract_fallback_subqueries(query, category_name, capability_queries=capability_queries)
+    subqueries, discovery_mode = extract_fallback_subqueries(query, category_name, capability_queries=capability_queries)
+    v3_capability_queries_used = (discovery_mode == "v3_capability_driven")
+    legacy_fallback_used = (discovery_mode == "legacy_dynamic_text")
+    if v3_capability_queries_used:
+        print(f"[Stage6/V3] {category_name}: capability-driven queries = {subqueries[:2]}")
+    else:
+        print(f"[Stage6/Legacy] {category_name}: legacy dynamic queries = {subqueries[:2]}")
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     token = os.environ.get("GITHUB_TOKEN")
     if token:
