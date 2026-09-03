@@ -493,7 +493,20 @@ def get_prompt_template_updates():
         print(f"Error fetching dynamic prompt templates: {e}")
     return templates
 
-def extract_fallback_subqueries(query_text, category_name=""):
+def extract_fallback_subqueries(query_text, category_name="", capability_queries=None):
+    """
+    Stage 6: Dynamic Query Generator.
+    Priority 1: Use pre-generated capability-driven queries from generate_ecosystem_queries().
+    Priority 2: Dynamically extract from raw query_text when capability_queries unavailable.
+    """
+    # Priority 1 — Use pre-generated structured capability queries (V3 path)
+    if capability_queries and isinstance(capability_queries, list) and len(capability_queries) > 0:
+        # URL-encode each generated query phrase for the target API
+        import urllib.parse
+        encoded = [urllib.parse.quote_plus(q.strip()) for q in capability_queries if q.strip()]
+        return encoded[:6] or ["ai"]
+
+    # Priority 2 — Dynamically extract from raw text (legacy fallback path)
     if not query_text:
         return ["ai"]
     from usecase_matcher import ENGLISH_STOPWORDS, ACTION_VERB_STOPLIST, scenario_matcher
@@ -522,9 +535,14 @@ def extract_fallback_subqueries(query_text, category_name=""):
     return subqueries[:4] or ["ai"]
 
 # Live Fallback Handler for ALL 12 categories dynamically
-def fetch_live_category_fallback(category_name, query=""):
+def fetch_live_category_fallback(category_name, query="", capability_queries=None):
+    """
+    Stage 6: Live discovery fallback for a single ecosystem category.
+    capability_queries: pre-generated list of query strings from generate_ecosystem_queries()[category].
+    If provided, these are used directly (V3 dynamic path) instead of deriving queries from raw text.
+    """
     import urllib.parse
-    subqueries = extract_fallback_subqueries(query, category_name)
+    subqueries = extract_fallback_subqueries(query, category_name, capability_queries=capability_queries)
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     token = os.environ.get("GITHUB_TOKEN")
     if token:

@@ -114,8 +114,16 @@ def _inject_streamlit_api_route():
                         from usecase_matcher import scenario_matcher
                         result = scenario_matcher.match_scenario(scenario, all_data, top_k=top_k)
 
+                        # Stage 6: Use capability-driven queries for live discovery fallback
+                        generated_queries = result.get("instrumentation", {}).get("generated_queries", {})
+
                         for cat in result.get("low_confidence_categories", []):
-                            live_items = fetch_live_category_fallback(cat, scenario)
+                            # Pass pre-generated capability queries for this category (V3 dynamic path)
+                            cap_queries_for_cat = generated_queries.get(cat, [])
+                            live_items = fetch_live_category_fallback(
+                                cat, scenario,
+                                capability_queries=cap_queries_for_cat if cap_queries_for_cat else None
+                            )
                             if live_items:
                                 scored_items = []
                                 for item in live_items:
