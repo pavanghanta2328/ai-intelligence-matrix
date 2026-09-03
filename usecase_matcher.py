@@ -39,11 +39,8 @@ ENGLISH_STOPWORDS = {
 ACTION_VERB_STOPLIST = {
     "build", "building", "create", "creating", "design", "designing",
     "implement", "implementing", "develop", "developing", "make", "making",
-    "construct", "constructing", "want", "need", "help", "thought", "thouight", "thougth", "think",
-    "looking", "find", "provide", "run", "running", "set", "setting",
-    "orchestrate", "orchestrates", "orchestrating", "enable", "enables", "enabling",
-    "execute", "executing", "evaluate", "evaluating", "enforce", "enforcing",
-    "produce", "producing", "launch", "launching"
+    "construct", "constructing", "want", "need", "help", "thought", "think",
+    "looking", "find", "provide", "run", "running", "set", "setting", "trying", "wanted"
 }
 
 GENERIC_CONTAINER_NOUNS = {
@@ -508,21 +505,21 @@ class UniversalMultiRoleMatcher:
     def profile_candidate(self, candidate_item):
         """
         Module 3: Candidate Profiler.
-        Converts raw candidate data into a structured Candidate Profile.
+        Converts raw candidate data into a deterministic structured Candidate Profile.
         """
         title = (candidate_item.get("Title") or "").strip()
         desc = (candidate_item.get("Description") or "").strip()
         text_lower = f"{title} {desc}".lower()
         
         raw_tokens = re.findall(r'\b[a-zA-Z0-9\-]+\b', text_lower)
-        clean_tech = self.suppress_generic_signals(raw_tokens)
+        clean_tech_list = self.suppress_generic_signals(raw_tokens)
         
         capabilities = []
-        for i in range(len(clean_tech) - 1):
+        for i in range(len(clean_tech_list) - 1):
             capabilities.append({
-                "name": f"{clean_tech[i]}_{clean_tech[i+1]}",
-                "action": clean_tech[i],
-                "object": clean_tech[i+1],
+                "name": f"{clean_tech_list[i]}_{clean_tech_list[i+1]}",
+                "action": clean_tech_list[i],
+                "object": clean_tech_list[i+1],
                 "confidence": 0.90
             })
             
@@ -531,22 +528,25 @@ class UniversalMultiRoleMatcher:
             "description": desc,
             "category": candidate_item.get("Type", "GitHub Repo"),
             "link": candidate_item.get("Link", ""),
-            "tech_tokens": set(clean_tech),
+            "tech_tokens_list": clean_tech_list,
+            "tech_tokens": set(clean_tech_list),
             "capabilities": capabilities[:6],
-            "roles": list(set(clean_tech))[:4]
+            "roles": list(set(clean_tech_list))[:4]
         }
 
     def candidate_is_eligible_stage_a(self, candidate_profile, intent_profile):
         """
-        Module 4: Stage A Binary Hard Gate.
-        Strictly evaluates capability/role match. Candidates without genuine capability alignment
-        are REJECTED at MatchScore = 0.0%.
+        Module 4: Stage A Role-Aware Binary Hard Gate.
+        Strictly evaluates capability/role match and domain contradictions.
+        Candidates without genuine capability or role alignment are REJECTED at MatchScore = 0.0%.
         """
         if not intent_profile or not intent_profile.get("capabilities"):
             return False, 0.0, "IRRELEVANT: Sparse intent profile"
 
         user_caps = intent_profile["capabilities"]
+        user_roles = intent_profile.get("roles", [])
         cand_text = f"{candidate_profile.get('title', '')} {candidate_profile.get('description', '')}".lower()
+        cand_tech_list = candidate_profile.get("tech_tokens_list", [])
         cand_tech = candidate_profile.get("tech_tokens", set())
 
         # Contradiction Gate: Domain/capability contradiction check
@@ -559,7 +559,7 @@ class UniversalMultiRoleMatcher:
             if not any(ct in user_prompt_text for ct in contradiction_terms):
                 return False, 0.0, "IRRELEVANT: Domain/Capability Contradiction"
 
-        # Stage A Capability Match Verification
+        # Stage A Capability & Role Match Verification
         generic_single_words = {"ai", "agent", "data", "model", "models", "app", "workload", "workloads", "file", "files"}
         max_sim = 0.0
         matched_cap_names = []
@@ -579,7 +579,6 @@ class UniversalMultiRoleMatcher:
             act_syns = set(self.get_anchor_synonyms(u_act)) if u_act else {u_act}
             obj_syns = set(self.get_anchor_synonyms(u_obj)) if u_obj else {u_obj}
             
-            # Add semantic technical domain synonyms
             if u_act == "transcribe":
                 act_syns.update(["transcription", "speech-to-text", "stt", "asr", "recognize"])
             if u_obj in ["spoken", "audio", "voice"]:
@@ -591,7 +590,6 @@ class UniversalMultiRoleMatcher:
             if u_act in ["evaluate", "judge", "benchmark"]:
                 act_syns.update(["evaluation", "judging", "benchmarking", "testing", "scoring"])
 
-            # Check if any action synonym and any object synonym exist in candidate text
             has_act_match = any(syn in cand_text for syn in act_syns if len(syn) > 2 and syn not in generic_single_words)
             has_obj_match = any(syn in cand_text for syn in obj_syns if len(syn) > 2 and syn not in generic_single_words)
 
@@ -600,17 +598,36 @@ class UniversalMultiRoleMatcher:
                 matched_cap_names.append(u_cap["name"])
                 break
 
-            # 3. Two-dimensional similarity calculation
+            # 3. Two-dimensional deterministic similarity calculation using ordered list
             sim = self.capability_similarity(u_cap, {
-                "name": " ".join(list(cand_tech)[:3]),
-                "action": list(cand_tech)[0] if cand_tech else "",
-                "object": list(cand_tech)[1] if len(cand_tech) > 1 else ""
+                "name": " ".join(cand_tech_list[:3]),
+                "action": cand_tech_list[0] if cand_tech_list else "",
+                "object": cand_tech_list[1] if len(cand_tech_list) > 1 else ""
             })
             if sim >= 0.50:
                 max_sim = max(max_sim, sim)
                 matched_cap_names.append(u_cap["name"])
 
-        if max_sim >= 0.50:
+        # Role-Aware Stage A Check with Synonym Expansion
+        role_aligned = True
+        if user_roles:
+            role_aligned = False
+            for r in user_roles:
+                r_syns = set(self.get_anchor_synonyms(r))
+                if r == "transcribe":
+                    r_syns.update(["transcription", "speech-to-text", "stt", "asr", "recognize"])
+                elif r in ["annotate", "label"]:
+                    r_syns.update(["annotation", "labeling", "tagging", "review"])
+                elif r in ["cluster", "group"]:
+                    r_syns.update(["clustering", "grouping", "categorization", "segmentation"])
+                elif r in ["evaluate", "judge", "benchmark"]:
+                    r_syns.update(["evaluation", "judging", "benchmarking", "testing", "scoring"])
+                    
+                if any(syn in cand_text for syn in r_syns if len(syn) > 2 and syn not in generic_single_words):
+                    role_aligned = True
+                    break
+
+        if max_sim >= 0.50 and role_aligned:
             return True, max_sim, f"ELIGIBLE: Verified capability match [{', '.join(matched_cap_names[:2])}]"
         else:
             return False, 0.0, "IRRELEVANT: No meaningful capability or role alignment with use case"
@@ -619,8 +636,11 @@ class UniversalMultiRoleMatcher:
         """
         Module 5: Stage B Composite Relevance Ranking.
         Formula: 30% Capability + 25% Task + 20% Role + 15% Evidence + 10% Practical Usefulness
+        Real evidence verification and real usefulness evaluation applied.
         """
         cand_text = f"{candidate_item.get('Title', '')} {candidate_item.get('Description', '')}".lower()
+        desc = (candidate_item.get("Description") or "").lower()
+        link = (candidate_item.get("Link") or "").strip()
         
         # 1. Capability Match (30%)
         s_cap = stage_a_sim * 100.0
@@ -635,11 +655,24 @@ class UniversalMultiRoleMatcher:
         matched_roles = [r for r in roles if r in cand_text]
         s_role = (len(matched_roles) / max(1, len(roles))) * 100.0 if roles else 50.0
         
-        # 4. Evidence Quality (15%)
-        s_evidence = 90.0 if len(candidate_item.get("Description", "")) > 40 else 50.0
+        # 4. Evidence Quality Verification (15%)
+        # Evaluates capability claim verification from description text rather than raw character length
+        user_caps = intent_profile.get("capabilities", [])
+        has_claim_verification = False
+        for c in user_caps:
+            act, obj = c.get("action", ""), c.get("object", "")
+            if act and obj and (act in desc) and (obj in desc):
+                has_claim_verification = True
+                break
+                
+        s_evidence = 95.0 if has_claim_verification else (70.0 if len(desc) > 50 else 30.0)
         
-        # 5. Practical Usefulness (10%)
-        s_useful = 85.0 if candidate_item.get("Link") else 50.0
+        # 5. Practical Usefulness Evaluation (10%)
+        # Evaluates URL validity, repository/SDK package status, and actionability
+        is_valid_url = link.startswith("http://") or link.startswith("https://")
+        is_code_or_pkg = candidate_item.get("Type") in ["GitHub Repo", "PyPI Release", "Prompt & Guardrail Templates"]
+        
+        s_useful = 95.0 if (is_valid_url and is_code_or_pkg) else (70.0 if is_valid_url else 30.0)
         
         # Stage B Weighted Composite Relevance Score Formula
         score = (0.30 * s_cap) + (0.25 * s_task) + (0.20 * s_role) + (0.15 * s_evidence) + (0.10 * s_useful)
@@ -647,7 +680,7 @@ class UniversalMultiRoleMatcher:
 
     def generate_evidence_audit_record(self, item, intent_profile, score):
         """
-        Module 6: Evidence & Provenance Traceability Record.
+        Module 6: Evidence & Provenance Traceability Record with Claim Verification.
         """
         title = item.get("Title", "")
         desc = item.get("Description", "")
@@ -655,9 +688,20 @@ class UniversalMultiRoleMatcher:
         cat = item.get("Type", "GitHub Repo")
         
         tasks = intent_profile.get("tasks", [])
+        user_caps = intent_profile.get("capabilities", [])
+        
+        # Extract verifiable quote from description matching prompt capability
+        matching_quote = desc[:150]
+        claim_verified = False
+        for c in user_caps:
+            act, obj = c.get("action", ""), c.get("object", "")
+            if act and obj and (act in desc.lower()) and (obj in desc.lower()):
+                claim_verified = True
+                matching_quote = f"Proven capability: '{act} {obj}' verified in source text."
+                break
+                
         clean_matched = [t for t in tasks if any(w in desc.lower() for w in t.split() if w not in ENGLISH_STOPWORDS)]
         matched_str = ", ".join(clean_matched[:2]) if clean_matched else "core technical requirements"
-        
         tip = self.generate_role_tip(item, clean_matched)
         
         return {
@@ -665,7 +709,8 @@ class UniversalMultiRoleMatcher:
             "category": cat,
             "relevance_score": f"{score}%",
             "source_url": link,
-            "evidence_quote": desc[:150],
+            "evidence_quote": matching_quote,
+            "claim_status": "VERIFIED" if claim_verified else "UNVERIFIED",
             "rationale": f"Directly provides capability alignment for [{matched_str}] required by your use case.",
             "action_tip": tip
         }
