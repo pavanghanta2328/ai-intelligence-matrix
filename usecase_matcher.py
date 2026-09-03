@@ -765,30 +765,98 @@ class UniversalMultiRoleMatcher:
         else:
             return f"Actionable developer reference resource for [{matched_str}]."
 
+    def normalize_capabilities(self, intent_profile):
+        """
+        V3 Module A: Capability Normalization & Context Noise Filter.
+        Classifies extracted capabilities into Core Semantic Capabilities vs Suppressed Context Noise.
+        """
+        if not intent_profile or not intent_profile.get("capabilities"):
+            return [], []
+
+        context_noise_words = {
+            "enterprise_ai", "enables_enterprise", "launch_data", "execute_multi-layer",
+            "ai_agents", "automated_pipeline", "deep_learning", "real-time_voice", "i_want"
+        }
+        
+        core_semantic = []
+        suppressed_noise = []
+        
+        for c in intent_profile["capabilities"]:
+            c_name = c.get("name", "").lower()
+            if c_name in context_noise_words or c.get("action") in ["enterprise", "enables", "i", "we", "want"]:
+                suppressed_noise.append(c_name)
+            else:
+                core_semantic.append(c)
+
+        return core_semantic, suppressed_noise
+
+    def generate_ecosystem_queries(self, core_capabilities):
+        """
+        V3 Module B: Ecosystem Query Generation Engine.
+        Converts normalized core capabilities into targeted ecosystem search queries.
+        Query expansion broadens discovery while preserving frozen V2 Stage A relevance verification.
+        """
+        queries = {
+            "GitHub Repo": [],
+            "PyPI Release": [],
+            "arXiv Research Paper": [],
+            "Hugging Face Model": [],
+            "Hugging Face Dataset": []
+        }
+        
+        for c in core_capabilities:
+            act = c.get("action", "")
+            obj = c.get("object", "")
+            if not act or not obj:
+                continue
+                
+            clean_phrase = f"{act} {obj}".replace("_", " ")
+            
+            # Category-specific targeted query generation
+            queries["GitHub Repo"].append(f"{clean_phrase} tool framework")
+            queries["PyPI Release"].append(f"{clean_phrase} sdk package")
+            queries["arXiv Research Paper"].append(f"{clean_phrase} architecture benchmark")
+            queries["Hugging Face Model"].append(f"{clean_phrase} inference model")
+            queries["Hugging Face Dataset"].append(f"{clean_phrase} evaluation ground-truth dataset")
+
+        return queries
+
     def match_scenario(self, scenario_text, all_updates_dict, top_k=5):
         """
-        Module 7: Full 12-Source Precision Pipeline.
+        V3 Instrumented Pipeline with Dynamic Query Generation & Frozen V2 Stage A / Stage B Gates.
         """
         keywords = self.extract_keywords(scenario_text)
         subject_anchor = self.extract_subject_anchor(scenario_text)
         intent_profile = self.extract_usecase_profile(scenario_text)
         
+        # V3 Normalization & Query Generation
+        core_caps, suppressed_noise = self.normalize_capabilities(intent_profile)
+        generated_queries = self.generate_ecosystem_queries(core_caps)
+        
         results = {}
         low_confidence_categories = []
+        
+        total_discovered = 0
+        total_eligible = 0
+        total_rejected = 0
         
         for category in ALL_12_CATEGORIES:
             cat_items = all_updates_dict.get(category, [])
             cat_items = sorted(cat_items, key=lambda x: str(x.get("Link", "")))
+            total_discovered += len(cat_items)
             
             scored_items = []
             for item in cat_items:
                 score, matched_kw, tip = self.score_item(item, keywords, subject_anchor, intent_profile=intent_profile)
                 if score >= 25.0:
+                    total_eligible += 1
                     item_copy = dict(item)
                     item_copy["MatchScore"] = score
                     item_copy["MatchedKeywords"] = matched_kw
                     item_copy["IntegrationTip"] = tip
                     scored_items.append(item_copy)
+                else:
+                    total_rejected += 1
                     
             scored_items.sort(key=lambda x: (x["MatchScore"], str(x.get("Link", ""))), reverse=True)
             top_matches = scored_items[:top_k]
@@ -798,11 +866,23 @@ class UniversalMultiRoleMatcher:
             if len(top_matches) < 2 or (top_matches and top_matches[0]["MatchScore"] < 25.0):
                 low_confidence_categories.append(category)
                 
+        instrumentation = {
+            "raw_capabilities_count": len(intent_profile.get("capabilities", [])),
+            "core_semantic_capabilities": [c.get("name") for c in core_caps],
+            "suppressed_context_noise": suppressed_noise,
+            "generated_queries": generated_queries,
+            "total_candidates_discovered": total_discovered,
+            "stage_a_eligible_count": total_eligible,
+            "stage_a_rejected_count": total_rejected,
+            "stage_a_rejection_rate": f"{(total_rejected / max(1, total_discovered)) * 100.0:.1f}%"
+        }
+
         return {
             "scenario": scenario_text,
             "keywords": keywords,
             "subject_anchor": subject_anchor,
             "intent_profile": intent_profile,
+            "instrumentation": instrumentation,
             "recommendations": results,
             "low_confidence_categories": low_confidence_categories
         }
