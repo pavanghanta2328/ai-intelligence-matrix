@@ -638,6 +638,89 @@ class UniversalMultiRoleMatcher:
         else:
             return False, 0.0, "IRRELEVANT: No meaningful capability or role alignment with use case"
 
+    def _verify_capability_evidence(self, candidate_text, core_caps):
+        """
+        Stage 11: NLP-Based Evidence Claim Verification.
+        Analyzes candidate text against core semantic capabilities.
+        Returns: (status: str, matched_capability_name: str, evidence_quote: str)
+        status: "VERIFIED", "PARTIAL", or "UNVERIFIED"
+        """
+        if not core_caps or not candidate_text:
+            return "UNVERIFIED", "", ""
+
+        cand_lower = candidate_text.lower()
+        # Simple sentence boundary split for quote extraction
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', candidate_text) if s.strip()]
+        if not sentences:
+            sentences = [candidate_text.strip()]
+
+        cand_tokens = {t for t in re.split(r'\W+', cand_lower) if len(t) > 2}
+        cand_stems = {self._stem_simple(t) for t in cand_tokens}
+
+        best_status = "UNVERIFIED"
+        best_cap_name = ""
+        best_quote = ""
+
+        for c in core_caps:
+            act = c.get("action", "")
+            obj = c.get("object", "")
+            name = c.get("name", "")
+            if not act or not obj:
+                continue
+
+            act_tokens = {t for t in re.split(r'\W+', act.lower()) if len(t) > 2 and t not in ENGLISH_STOPWORDS}
+            obj_tokens = {t for t in re.split(r'\W+', obj.lower()) if len(t) > 2 and t not in ENGLISH_STOPWORDS}
+            
+            act_stems = {self._stem_simple(t) for t in act_tokens}
+            obj_stems = {self._stem_simple(t) for t in obj_tokens}
+
+            def _tokens_match(query_stems, text_stems):
+                for q in query_stems:
+                    for t in text_stems:
+                        if q == t or (len(q) > 3 and len(t) > 3 and (q.startswith(t) or t.startswith(q))):
+                            return True
+                return False
+
+            # Check overlap
+            has_act = _tokens_match(act_stems, cand_stems)
+            has_obj = _tokens_match(obj_stems, cand_stems)
+
+            status = "UNVERIFIED"
+            if has_act and has_obj:
+                status = "VERIFIED"
+            elif has_act or has_obj:
+                status = "PARTIAL"
+
+            if status in ("VERIFIED", "PARTIAL"):
+                # Find best sentence for quote
+                found_quote = ""
+                for sent in sentences:
+                    s_lower = sent.lower()
+                    s_toks = {t for t in re.split(r'\W+', s_lower) if len(t) > 2}
+                    s_stems = {self._stem_simple(t) for t in s_toks}
+                    
+                    if status == "VERIFIED":
+                        if _tokens_match(act_stems, s_stems) and _tokens_match(obj_stems, s_stems):
+                            found_quote = sent
+                            break
+                    else:
+                        if _tokens_match(act_stems, s_stems) or _tokens_match(obj_stems, s_stems):
+                            found_quote = sent
+                            break
+                
+                if not found_quote:
+                    found_quote = sentences[0]
+                    
+                if status == "VERIFIED":
+                    return status, name, found_quote
+                else:
+                    if best_status == "UNVERIFIED":
+                        best_status = "PARTIAL"
+                        best_cap_name = name
+                        best_quote = found_quote
+
+        return best_status, best_cap_name, best_quote
+
     def rank_eligible_candidates_stage_b(self, candidate_item, intent_profile, stage_a_sim):
         """
         Module 5: Stage B Composite Relevance Ranking.
@@ -662,16 +745,16 @@ class UniversalMultiRoleMatcher:
         s_role = (len(matched_roles) / max(1, len(roles))) * 100.0 if roles else 50.0
         
         # 4. Evidence Quality Verification (15%)
-        # Evaluates capability claim verification from description text rather than raw character length
-        user_caps = intent_profile.get("capabilities", [])
-        has_claim_verification = False
-        for c in user_caps:
-            act, obj = c.get("action", ""), c.get("object", "")
-            if act and obj and (act in desc) and (obj in desc):
-                has_claim_verification = True
-                break
-                
-        s_evidence = 95.0 if has_claim_verification else (70.0 if len(desc) > 50 else 30.0)
+        # Stage 11: NLP-Based Capability verification mapping to frozen scoring values
+        core_caps, _ = self.normalize_capabilities(intent_profile)
+        status, _, _ = self._verify_capability_evidence(cand_text, core_caps)
+        
+        if status == "VERIFIED":
+            s_evidence = 95.0
+        elif status == "PARTIAL":
+            s_evidence = 70.0
+        else:
+            s_evidence = 30.0
         
         # 5. Practical Usefulness Evaluation (10%)
         # Evaluates URL validity, repository/SDK package status, and actionability
@@ -694,18 +777,12 @@ class UniversalMultiRoleMatcher:
         cat = item.get("Type", "GitHub Repo")
         
         tasks = intent_profile.get("tasks", [])
-        user_caps = intent_profile.get("capabilities", [])
         
-        # Extract verifiable quote from description matching prompt capability
-        matching_quote = desc[:150]
-        claim_verified = False
-        for c in user_caps:
-            act, obj = c.get("action", ""), c.get("object", "")
-            if act and obj and (act in desc.lower()) and (obj in desc.lower()):
-                claim_verified = True
-                matching_quote = f"Proven capability: '{act} {obj}' verified in source text."
-                break
-                
+        # Stage 11: Stronger evidence check
+        cand_text = f"{title} {desc}"
+        core_caps, _ = self.normalize_capabilities(intent_profile)
+        status, matched_cap, quote = self._verify_capability_evidence(cand_text, core_caps)
+        
         clean_matched = [t for t in tasks if any(w in desc.lower() for w in t.split() if w not in ENGLISH_STOPWORDS)]
         matched_str = ", ".join(clean_matched[:2]) if clean_matched else "core technical requirements"
         tip = self.generate_role_tip(item, clean_matched)
@@ -715,8 +792,9 @@ class UniversalMultiRoleMatcher:
             "category": cat,
             "relevance_score": f"{score}%",
             "source_url": link,
-            "evidence_quote": matching_quote,
-            "claim_status": "VERIFIED" if claim_verified else "UNVERIFIED",
+            "claim_status": status,
+            "matched_capability": matched_cap,
+            "evidence_quote": quote if quote else desc[:150],
             "rationale": f"Directly provides capability alignment for [{matched_str}] required by your use case.",
             "action_tip": tip
         }
