@@ -738,14 +738,5 @@ def fetch_all_updates_dict(client=None):
             "YouTube Video": get_youtube_updates(),
             "Prompt & Guardrail Templates": get_prompt_template_updates()
         }
-    else:
-        # Fill missing keys if any
-        if "Hugging Face Dataset" not in data:
-            data["Hugging Face Dataset"] = get_huggingface_dataset_updates()
-        if "Medium & Dev Community" not in data:
-            data["Medium & Dev Community"] = get_medium_dev_community_updates()
-        if "Prompt & Guardrail Templates" not in data:
-            data["Prompt & Guardrail Templates"] = get_prompt_template_updates()
-            
     return data
 
