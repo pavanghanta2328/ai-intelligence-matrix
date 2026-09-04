@@ -660,377 +660,259 @@ else:
             unsafe_allow_html=True
         )
 
-        # Mode Selection
-        view_mode = st.radio(
-            "Select View Mode:",
-            ["🎯 360° Use-Case AI Advisor", "📡 All Scanned Intelligence Feeds"],
-            horizontal=True,
-            key="platform_view_mode"
-        )
-        
-        if view_mode == "🎯 360° Use-Case AI Advisor":
-            st.markdown("### 💡 Universal 360° AI Developer Advisor")
-            st.markdown("Describe ANY project scenario or engineering requirement below. Our engine automatically matches and suggests actionable tools across all 12 categories.")
-            
-            # Scenario Input
-            scenario_text = st.text_area(
-                "Project Scenario / Use Case Description",
-                value=st.session_state.get("active_scenario", ""),
-                placeholder="Describe your project requirement, tech stack, or engineering scenario...",
-                height=100,
-                key="scenario_text_input"
-            )
-            
-            active_prompt = scenario_text.strip()
-            if active_prompt:
-                st.markdown(f"#### 🎯 Recommended AI Stack for: *\"{active_prompt}\"*")
-                with st.spinner("Analyzing scenario & querying all 12 categories..."):
-                    from usecase_matcher import scenario_matcher
-                    from scrapers import fetch_live_category_fallback
-                    
-                    rec_result = scenario_matcher.match_scenario(active_prompt, raw_categories_data, top_k=5)
-                    
-                    # Handle low-confidence category fallbacks
-                    for low_cat in rec_result.get("low_confidence_categories", []):
-                        live_items = fetch_live_category_fallback(low_cat, active_prompt)
-                        if live_items:
-                            scored = []
-                            for it in live_items:
-                                sc, kw, audit = scenario_matcher.score_item(it, rec_result["keywords"], rec_result.get("subject_anchor", ""))
-                                if sc >= 15.0:
-                                    it_copy = dict(it)
-                                    it_copy["MatchScore"] = sc
-                                    it_copy["MatchedKeywords"] = kw
-                                    it_copy["IntegrationTip"] = audit["action_tip"] if isinstance(audit, dict) else audit
-                                    it_copy["Audit"] = audit if isinstance(audit, dict) else {}
-                                    scored.append(it_copy)
-                            scored.sort(key=lambda x: x["MatchScore"], reverse=True)
-                            rec_result["recommendations"][low_cat] = scored[:5]
+        # Full raw feed viewer mode
+        # Retrieve active search query from session state
+        search_query = st.session_state.get("exec_search_input", "")
 
-                    # Stage 14: Project Understanding Header
-                    intent = rec_result.get("intent_profile", {})
-                    caps_str = ", ".join([c.get("name", "") for c in intent.get("capabilities", []) if c.get("name")])
-                    roles_str = ", ".join(intent.get("roles", []))
-                    st.markdown(f"""
-                    <div style="background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #10b981;">
-                        <h5 style="margin-top: 0; color: #f8fafc; font-size: 1.1rem; margin-bottom: 8px;">🧠 Project Understanding</h5>
-                        <p style="margin: 4px 0; color: #cbd5e1; font-size: 0.95rem;"><strong>Core Capabilities:</strong> {caps_str or 'None detected'}</p>
-                        <p style="margin: 4px 0; color: #cbd5e1; font-size: 0.95rem;"><strong>Relevant Roles:</strong> {roles_str or 'General Developer'}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
+        # Dynamically filter dataset based on active search query
+        all_categories_data = {}
+        for cat, items in raw_categories_data.items():
+            all_categories_data[cat] = [it for it in items if matches_search(it, search_query)]
 
-                    # Render 12 category accordions
-                    recs = rec_result.get("recommendations", {})
-                    for cat_name, items in recs.items():
-                        match_count = len(items)
-                        with st.expander(f"📦 {cat_name} ({match_count} Top Recommendations)", expanded=(match_count > 0)):
-                            if not items:
-                                st.info(f"No specific matches found for {cat_name}.")
-                            for item in items:
-                                score = item.get("MatchScore", 0.0)
-                                tip = item.get("IntegrationTip", "")
-                                link = item.get("Link", "#")
-                                title = item.get("Title", "Untitled")
-                                desc = item.get("Description", "")
-                                audit = item.get("Audit", {})
-                                cap = audit.get("matched_capability", "General Fit")
-                                status = audit.get("claim_status", "UNVERIFIED")
-                                quote = audit.get("evidence_quote", "No specific evidence matched.")
-                                
-                                status_color = "#10b981" if status == "VERIFIED" else ("#f59e0b" if status == "PARTIAL" else "#ef4444")
-                                
-                                st.markdown(f"""
-                                <div style="background: #1e293b; border: 1px solid #334155; border-left: 5px solid {status_color}; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
-                                        <a href="{link}" target="_blank" style="color: #38bdf8; font-size: 1.15rem; font-weight: 700; text-decoration: none; display: flex; align-items: center; gap: 6px;">
-                                            🔗 {title}
-                                        </a>
-                                        <span style="background: #0284c7; color: #ffffff; padding: 4px 14px; border-radius: 20px; font-weight: 800; font-size: 0.85rem; letter-spacing: 0.5px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
-                                            🎯 {score}% Match
-                                        </span>
-                                    </div>
-                                    <p style="color: #f1f5f9; font-size: 0.95rem; line-height: 1.6; margin-bottom: 12px; font-weight: 400;">
-                                        {desc}
-                                    </p>
-                                    
-                                    <div style="background: #0f172a; padding: 12px; border-radius: 6px; margin-top: 12px; border: 1px solid #334155;">
-                                        <div style="margin-bottom: 8px;">
-                                            <span style="color: #94a3b8; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Why This Matches</span>
-                                        </div>
-                                        <div style="display: flex; gap: 10px; margin-bottom: 8px; font-size: 0.85rem;">
-                                            <span style="background: #334155; color: #f8fafc; padding: 2px 8px; border-radius: 4px; font-weight: 500;">⚙️ {cap}</span>
-                                            <span style="background: {status_color}33; color: {status_color}; padding: 2px 8px; border-radius: 4px; font-weight: 700;">✓ {status}</span>
-                                        </div>
-                                        <div style="color: #cbd5e1; font-size: 0.88rem; font-style: italic; border-left: 2px solid #475569; padding-left: 10px; margin-bottom: 10px;">
-                                            "{quote}"
-                                        </div>
-                                        
-                                        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #334155;">
-                                            <span style="color: #94a3b8; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 6px; font-weight: 600;">Best Use / Action</span>
-                                            <span style="color: #f8fafc; font-size: 0.9rem; line-height: 1.5; font-weight: 500;">
-                                                {tip}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                                """, unsafe_allow_html=True)
-            else:
-                st.info("💡 Type any project description above to generate a tailored 12-category developer recommendation!")
+        filtered_total_count = sum(len(lst) for lst in all_categories_data.values())
 
+        # ----------------------------------------------------
+        # 2️⃣ Hero Executive Stats Banner (Placed Exactly after Heading at Top)
+        # ----------------------------------------------------
+        active_cats_with_items = [(cat, items) for cat, items in all_categories_data.items() if len(items) > 0]
+        if active_cats_with_items:
+            top_cat_name, top_cat_items = max(active_cats_with_items, key=lambda x: len(x[1]))
+            top_cat_count = len(top_cat_items)
         else:
-            # Full raw feed viewer mode
-            # Retrieve active search query from session state
-            search_query = st.session_state.get("exec_search_input", "")
+            top_cat_name, top_cat_count = "None", 0
 
-            # Dynamically filter dataset based on active search query
-            all_categories_data = {}
-            for cat, items in raw_categories_data.items():
-                all_categories_data[cat] = [it for it in items if matches_search(it, search_query)]
+        friendly_kpi_names = {
+            "GitHub Repo": "GitHub Repos",
+            "Hugging Face Model": "Hugging Face",
+            "Hugging Face Dataset": "HF Datasets",
+            "arXiv Research Paper": "arXiv Papers",
+            "PyPI Release": "PyPI Packages",
+            "Corporate Blog": "Tech Blogs",
+            "Medium & Dev Community": "Medium Articles",
+            "Reddit Discussion": "Reddit Topics",
+            "Product Hunt Launch": "Product Hunt",
+            "AI Course": "AI Courses",
+            "YouTube Video": "YouTube Videos",
+            "Prompt & Guardrail Templates": "Prompt Templates",
+            "None": "N/A"
+        }
+        top_display_name = friendly_kpi_names.get(top_cat_name, top_cat_name)
 
-            filtered_total_count = sum(len(lst) for lst in all_categories_data.values())
+        kpi1, kpi2, kpi3 = st.columns(3)
+        kpi1.metric("📊 All Intelligence Records", f"{filtered_total_count} Items", delta=f"Filtered from {total_raw_count}" if search_query else f"{total_raw_count} total across all scans")
+        kpi2.metric("📡 Active Scanned Sources", f"{len(active_cats_with_items)} Channels")
+        kpi3.metric("🔥 Top Trending Sector", top_display_name, f"{top_cat_count} Items" if top_cat_count > 0 else None)
 
-            # ----------------------------------------------------
-            # 2️⃣ Hero Executive Stats Banner (Placed Exactly after Heading at Top)
-            # ----------------------------------------------------
-            active_cats_with_items = [(cat, items) for cat, items in all_categories_data.items() if len(items) > 0]
-            if active_cats_with_items:
-                top_cat_name, top_cat_items = max(active_cats_with_items, key=lambda x: len(x[1]))
-                top_cat_count = len(top_cat_items)
-            else:
-                top_cat_name, top_cat_count = "None", 0
+        st.markdown("---")
 
-            friendly_kpi_names = {
-                "GitHub Repo": "GitHub Repos",
-                "Hugging Face Model": "Hugging Face",
-                "Hugging Face Dataset": "HF Datasets",
-                "arXiv Research Paper": "arXiv Papers",
-                "PyPI Release": "PyPI Packages",
-                "Corporate Blog": "Tech Blogs",
-                "Medium & Dev Community": "Medium Articles",
-                "Reddit Discussion": "Reddit Topics",
-                "Product Hunt Launch": "Product Hunt",
-                "AI Course": "AI Courses",
-                "YouTube Video": "YouTube Videos",
-                "Prompt & Guardrail Templates": "Prompt Templates",
-                "None": "N/A"
-            }
-            top_display_name = friendly_kpi_names.get(top_cat_name, top_cat_name)
+        # ----------------------------------------------------
+        # 3️⃣ Executive Visual Analytics (Category Breakdown)
+        # ----------------------------------------------------
+        with st.expander("📊 Executive Visual Analytics (Category Distribution)", expanded=True):
+            import altair as alt
+            chart_data = pd.DataFrame({
+                "Category": list(all_categories_data.keys()),
+                "Resources": [len(lst) for lst in all_categories_data.values()]
+            })
+        
+            # Create a vibrant, premium bar chart using Altair
+            chart = alt.Chart(chart_data).mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6).encode(
+                x=alt.X('Category:N', sort='-y', axis=alt.Axis(labelAngle=-45, title=None, labelFontSize=12)),
+                y=alt.Y('Resources:Q', title="Total Items", axis=alt.Axis(grid=True, gridOpacity=0.1, labelFontSize=12)),
+                color=alt.Color('Category:N', legend=None, scale=alt.Scale(scheme='category10')),
+                tooltip=['Category', 'Resources']
+            ).properties(height=380)
+        
+            st.altair_chart(chart, width="stretch")
 
-            kpi1, kpi2, kpi3 = st.columns(3)
-            kpi1.metric("📊 All Intelligence Records", f"{filtered_total_count} Items", delta=f"Filtered from {total_raw_count}" if search_query else f"{total_raw_count} total across all scans")
-            kpi2.metric("📡 Active Scanned Sources", f"{len(active_cats_with_items)} Channels")
-            kpi3.metric("🔥 Top Trending Sector", top_display_name, f"{top_cat_count} Items" if top_cat_count > 0 else None)
+        st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
-            st.markdown("---")
+        # ----------------------------------------------------
+        # 4️⃣ Compact Search Filter Toolbar (Placed AFTER Visualization)
+        # ----------------------------------------------------
+        filter_col1, filter_col2, filter_col3 = st.columns([2.2, 1.3, 0.5])
+        with filter_col1:
+            def on_search_change():
+                st.session_state["exec_search_input"] = st.session_state["exec_search_widget"]
 
-            # ----------------------------------------------------
-            # 3️⃣ Executive Visual Analytics (Category Breakdown)
-            # ----------------------------------------------------
-            with st.expander("📊 Executive Visual Analytics (Category Distribution)", expanded=True):
-                import altair as alt
-                chart_data = pd.DataFrame({
-                    "Category": list(all_categories_data.keys()),
-                    "Resources": [len(lst) for lst in all_categories_data.values()]
-                })
-                
-                # Create a vibrant, premium bar chart using Altair
-                chart = alt.Chart(chart_data).mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6).encode(
-                    x=alt.X('Category:N', sort='-y', axis=alt.Axis(labelAngle=-45, title=None, labelFontSize=12)),
-                    y=alt.Y('Resources:Q', title="Total Items", axis=alt.Axis(grid=True, gridOpacity=0.1, labelFontSize=12)),
-                    color=alt.Color('Category:N', legend=None, scale=alt.Scale(scheme='category10')),
-                    tooltip=['Category', 'Resources']
-                ).properties(height=380)
-                
-                st.altair_chart(chart, width="stretch")
-
-            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-
-            # ----------------------------------------------------
-            # 4️⃣ Compact Search Filter Toolbar (Placed AFTER Visualization)
-            # ----------------------------------------------------
-            filter_col1, filter_col2, filter_col3 = st.columns([2.2, 1.3, 0.5])
-            with filter_col1:
-                def on_search_change():
-                    st.session_state["exec_search_input"] = st.session_state["exec_search_widget"]
-
-                st.text_input(
-                    "🔍 Executive Keyword Filter",
-                    value=search_query,
-                    placeholder="Search LLM, Agent, DeepSeek, Vision, RAG, Llama...",
-                    key="exec_search_widget",
-                    on_change=on_search_change
+            st.text_input(
+                "🔍 Executive Keyword Filter",
+                value=search_query,
+                placeholder="Search LLM, Agent, DeepSeek, Vision, RAG, Llama...",
+                key="exec_search_widget",
+                on_change=on_search_change
+            )
+    
+        with filter_col2:
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+            export_rows = []
+            for cat, items in all_categories_data.items():
+                for item in items:
+                    export_rows.append({
+                        "Category": cat,
+                        "Title": item.get("Title", ""),
+                        "Description": item.get("Description", ""),
+                        "Link": item.get("Link", "")
+                    })
+            if export_rows:
+                df_export = pd.DataFrame(export_rows)
+                csv_data = df_export.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Briefing (CSV)",
+                    data=csv_data,
+                    file_name="executive_ai_intelligence_report.csv",
+                    mime="text/csv",
+                    width="stretch"
                 )
+
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+        # ----------------------------------------------------
+        # 5️⃣ Smart Paginated Rendering Helper (Pagination AT BOTTOM)
+        # ----------------------------------------------------
+        def render_paginated_category(category_name, items, badge_class, badge_label, tab_id):
+            if not items:
+                if search_query:
+                    st.info(f"No {category_name} items match search query '{search_query}'.")
+                else:
+                    st.info(f"No {category_name} updates available.")
+                return
+
+            total_filtered = len(items)
+            total_pages = max(1, (total_filtered + items_per_page - 1) // items_per_page)
+        
+            page_key = f"page_idx_{tab_id}"
+            if page_key not in st.session_state:
+                st.session_state[page_key] = 1
             
-            with filter_col2:
-                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                export_rows = []
-                for cat, items in all_categories_data.items():
-                    for item in items:
-                        export_rows.append({
-                            "Category": cat,
-                            "Title": item.get("Title", ""),
-                            "Description": item.get("Description", ""),
-                            "Link": item.get("Link", "")
-                        })
-                if export_rows:
-                    df_export = pd.DataFrame(export_rows)
-                    csv_data = df_export.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download Briefing (CSV)",
-                        data=csv_data,
-                        file_name="executive_ai_intelligence_report.csv",
-                        mime="text/csv",
-                        width="stretch"
-                    )
+            if st.session_state[page_key] > total_pages:
+                st.session_state[page_key] = 1
+            
+            current_page = st.session_state[page_key]
 
-            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+            # Slice current page items
+            start_idx = (current_page - 1) * items_per_page
+            end_idx = start_idx + items_per_page
+            page_items = items[start_idx:end_idx]
 
-            # ----------------------------------------------------
-            # 5️⃣ Smart Paginated Rendering Helper (Pagination AT BOTTOM)
-            # ----------------------------------------------------
-            def render_paginated_category(category_name, items, badge_class, badge_label, tab_id):
-                if not items:
-                    if search_query:
-                        st.info(f"No {category_name} items match search query '{search_query}'.")
-                    else:
-                        st.info(f"No {category_name} updates available.")
-                    return
+            from urllib.parse import urlparse
 
-                total_filtered = len(items)
-                total_pages = max(1, (total_filtered + items_per_page - 1) // items_per_page)
-                
-                page_key = f"page_idx_{tab_id}"
-                if page_key not in st.session_state:
-                    st.session_state[page_key] = 1
-                    
-                if st.session_state[page_key] > total_pages:
-                    st.session_state[page_key] = 1
-                    
-                current_page = st.session_state[page_key]
+            def get_domain(url):
+                try:
+                    netloc = urlparse(url).netloc
+                    return netloc.replace("www.", "") if netloc else "external"
+                except Exception:
+                    return "source link"
 
-                # Slice current page items
-                start_idx = (current_page - 1) * items_per_page
-                end_idx = start_idx + items_per_page
-                page_items = items[start_idx:end_idx]
+            # Render resource cards list
+            card_class = badge_class.replace("badge-", "card-")
+            for item in page_items:
+                link_url = item.get('Link', '#')
+                title_text = item.get('Title', 'Untitled Intelligence')
+                desc_text = item.get('Description', 'No summary provided.')
+                domain_host = get_domain(link_url)
+                timestamp = item.get('Timestamp', '')
+            
+                timestamp_html = f'<span style="color: #10b981; font-size: 0.75rem; font-weight: 600; background: rgba(16,185,129,0.1); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(16,185,129,0.2);">🕒 {timestamp}</span>' if timestamp else ''
+            
+                # Safe HTML escaping to prevent string breaks
+                safe_title = title_text.replace('"', '&quot;').replace("'", "&#39;")
+                safe_desc = desc_text.replace('"', '&quot;').replace("'", "&#39;")
 
-                from urllib.parse import urlparse
+                st.markdown(
+                    f"""
+    <div class="resource-card {card_class}">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+    <span class="resource-badge {badge_class}">{badge_label}</span>
+    <div style="display: flex; align-items: center; gap: 8px;">
+    {timestamp_html}
+    <span class="domain-pill">🌐 {domain_host}</span>
+    </div>
+    </div>
+    <div class="link-wrapper">
+    <a class="resource-title" href="{link_url}" target="_blank">{title_text}</a>
+    {generate_pylance_preview(item, category_name, domain_host)}
+    </div>
+    <p class="resource-desc">{desc_text}</p>
+    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
-                def get_domain(url):
-                    try:
-                        netloc = urlparse(url).netloc
-                        return netloc.replace("www.", "") if netloc else "external"
-                    except Exception:
-                        return "source link"
+            # Render Bottom Pagination Bar (Standard Web Application UX)
+            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+            p_col1, p_col2, p_col3 = st.columns([1.5, 3, 1.5])
+            with p_col1:
+                if st.button("⬅️ Previous", key=f"prev_{tab_id}", disabled=(current_page == 1)):
+                    st.session_state[page_key] = max(1, current_page - 1)
+                    st.rerun()
+            with p_col2:
+                st.markdown(
+                    f"<div style='text-align: center; padding-top: 6px; font-weight: 600; color: var(--text-color);'>"
+                    f"Page {current_page} of {total_pages} &nbsp;•&nbsp; ({total_filtered} items)"
+                    f"</div>", 
+                    unsafe_allow_html=True
+                )
+            with p_col3:
+                if st.button("Next ➡️", key=f"next_{tab_id}", disabled=(current_page >= total_pages)):
+                    st.session_state[page_key] = min(total_pages, current_page + 1)
+                    st.rerun()
 
-                # Render resource cards list
-                card_class = badge_class.replace("badge-", "card-")
-                for item in page_items:
-                    link_url = item.get('Link', '#')
-                    title_text = item.get('Title', 'Untitled Intelligence')
-                    desc_text = item.get('Description', 'No summary provided.')
-                    domain_host = get_domain(link_url)
-                    timestamp = item.get('Timestamp', '')
-                    
-                    timestamp_html = f'<span style="color: #10b981; font-size: 0.75rem; font-weight: 600; background: rgba(16,185,129,0.1); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(16,185,129,0.2);">🕒 {timestamp}</span>' if timestamp else ''
-                    
-                    # Safe HTML escaping to prevent string breaks
-                    safe_title = title_text.replace('"', '&quot;').replace("'", "&#39;")
-                    safe_desc = desc_text.replace('"', '&quot;').replace("'", "&#39;")
+        # ----------------------------------------------------
+        # 6️⃣ Executive Content Tabs (Dynamic Header Counts)
+        # ----------------------------------------------------
+        f_github = all_categories_data.get("GitHub Repo", [])
+        f_hf = all_categories_data.get("Hugging Face Model", [])
+        f_hf_ds = all_categories_data.get("Hugging Face Dataset", [])
+        f_arxiv = all_categories_data.get("arXiv Research Paper", [])
+        f_pypi = all_categories_data.get("PyPI Release", [])
+        f_blog = all_categories_data.get("Corporate Blog", [])
+        f_medium = all_categories_data.get("Medium & Dev Community", [])
+        f_reddit = all_categories_data.get("Reddit Discussion", [])
+        f_ph = all_categories_data.get("Product Hunt Launch", [])
+        f_course = all_categories_data.get("AI Course", [])
+        f_yt = all_categories_data.get("YouTube Video", [])
+        f_prompt = all_categories_data.get("Prompt & Guardrail Templates", [])
 
-                    st.markdown(
-                        f"""
-<div class="resource-card {card_class}">
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-<span class="resource-badge {badge_class}">{badge_label}</span>
-<div style="display: flex; align-items: center; gap: 8px;">
-{timestamp_html}
-<span class="domain-pill">🌐 {domain_host}</span>
-</div>
-</div>
-<div class="link-wrapper">
-<a class="resource-title" href="{link_url}" target="_blank">{title_text}</a>
-{generate_pylance_preview(item, category_name, domain_host)}
-</div>
-<p class="resource-desc">{desc_text}</p>
-</div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
+            f"💻 GitHub ({len(f_github)})", 
+            f"🤗 HF Models ({len(f_hf)})", 
+            f"📊 HF Datasets ({len(f_hf_ds)})", 
+            f"🔬 arXiv ({len(f_arxiv)})",
+            f"📦 PyPI ({len(f_pypi)})",
+            f"📰 Blogs ({len(f_blog)})",
+            f"✍️ Medium/Dev ({len(f_medium)})",
+            f"💬 Reddit ({len(f_reddit)})",
+            f"🚀 ProdHunt ({len(f_ph)})",
+            f"🎓 Courses ({len(f_course)})",
+            f"📺 Videos ({len(f_yt)})",
+            f"🛡️ Prompts ({len(f_prompt)})"
+        ])
 
-                # Render Bottom Pagination Bar (Standard Web Application UX)
-                st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-                p_col1, p_col2, p_col3 = st.columns([1.5, 3, 1.5])
-                with p_col1:
-                    if st.button("⬅️ Previous", key=f"prev_{tab_id}", disabled=(current_page == 1)):
-                        st.session_state[page_key] = max(1, current_page - 1)
-                        st.rerun()
-                with p_col2:
-                    st.markdown(
-                        f"<div style='text-align: center; padding-top: 6px; font-weight: 600; color: var(--text-color);'>"
-                        f"Page {current_page} of {total_pages} &nbsp;•&nbsp; ({total_filtered} items)"
-                        f"</div>", 
-                        unsafe_allow_html=True
-                    )
-                with p_col3:
-                    if st.button("Next ➡️", key=f"next_{tab_id}", disabled=(current_page >= total_pages)):
-                        st.session_state[page_key] = min(total_pages, current_page + 1)
-                        st.rerun()
-
-            # ----------------------------------------------------
-            # 6️⃣ Executive Content Tabs (Dynamic Header Counts)
-            # ----------------------------------------------------
-            f_github = all_categories_data.get("GitHub Repo", [])
-            f_hf = all_categories_data.get("Hugging Face Model", [])
-            f_hf_ds = all_categories_data.get("Hugging Face Dataset", [])
-            f_arxiv = all_categories_data.get("arXiv Research Paper", [])
-            f_pypi = all_categories_data.get("PyPI Release", [])
-            f_blog = all_categories_data.get("Corporate Blog", [])
-            f_medium = all_categories_data.get("Medium & Dev Community", [])
-            f_reddit = all_categories_data.get("Reddit Discussion", [])
-            f_ph = all_categories_data.get("Product Hunt Launch", [])
-            f_course = all_categories_data.get("AI Course", [])
-            f_yt = all_categories_data.get("YouTube Video", [])
-            f_prompt = all_categories_data.get("Prompt & Guardrail Templates", [])
-
-            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
-                f"💻 GitHub ({len(f_github)})", 
-                f"🤗 HF Models ({len(f_hf)})", 
-                f"📊 HF Datasets ({len(f_hf_ds)})", 
-                f"🔬 arXiv ({len(f_arxiv)})",
-                f"📦 PyPI ({len(f_pypi)})",
-                f"📰 Blogs ({len(f_blog)})",
-                f"✍️ Medium/Dev ({len(f_medium)})",
-                f"💬 Reddit ({len(f_reddit)})",
-                f"🚀 ProdHunt ({len(f_ph)})",
-                f"🎓 Courses ({len(f_course)})",
-                f"📺 Videos ({len(f_yt)})",
-                f"🛡️ Prompts ({len(f_prompt)})"
-            ])
-
-            with tab1:
-                render_paginated_category("GitHub Repo", f_github, "badge-github", "GitHub Repo", "tab_gh")
-            with tab2:
-                render_paginated_category("Hugging Face Model", f_hf, "badge-hf", "Hugging Face Model", "tab_hf")
-            with tab3:
-                render_paginated_category("Hugging Face Dataset", f_hf_ds, "badge-hf", "Hugging Face Dataset", "tab_hf_ds")
-            with tab4:
-                render_paginated_category("arXiv Research Paper", f_arxiv, "badge-arxiv", "arXiv Research Paper", "tab_arxiv")
-            with tab5:
-                render_paginated_category("PyPI Release", f_pypi, "badge-pypi", "PyPI Release", "tab_pypi")
-            with tab6:
-                render_paginated_category("Corporate Blog", f_blog, "badge-blog", "AI Blog", "tab_blog")
-            with tab7:
-                render_paginated_category("Medium & Dev Community", f_medium, "badge-blog", "Medium / Dev", "tab_medium")
-            with tab8:
-                render_paginated_category("Reddit Discussion", f_reddit, "badge-reddit", "Reddit Discussion", "tab_reddit")
-            with tab9:
-                render_paginated_category("Product Hunt Launch", f_ph, "badge-ph", "Product Hunt Launch", "tab_ph")
-            with tab10:
-                render_paginated_category("AI Course", f_course, "badge-course", "AI Course", "tab_course")
-            with tab11:
-                render_paginated_category("YouTube Video", f_yt, "badge-yt", "YouTube Video", "tab_yt")
-            with tab12:
-                render_paginated_category("Prompt & Guardrail Templates", f_prompt, "badge-course", "Prompt Template", "tab_prompt")
+        with tab1:
+            render_paginated_category("GitHub Repo", f_github, "badge-github", "GitHub Repo", "tab_gh")
+        with tab2:
+            render_paginated_category("Hugging Face Model", f_hf, "badge-hf", "Hugging Face Model", "tab_hf")
+        with tab3:
+            render_paginated_category("Hugging Face Dataset", f_hf_ds, "badge-hf", "Hugging Face Dataset", "tab_hf_ds")
+        with tab4:
+            render_paginated_category("arXiv Research Paper", f_arxiv, "badge-arxiv", "arXiv Research Paper", "tab_arxiv")
+        with tab5:
+            render_paginated_category("PyPI Release", f_pypi, "badge-pypi", "PyPI Release", "tab_pypi")
+        with tab6:
+            render_paginated_category("Corporate Blog", f_blog, "badge-blog", "AI Blog", "tab_blog")
+        with tab7:
+            render_paginated_category("Medium & Dev Community", f_medium, "badge-blog", "Medium / Dev", "tab_medium")
+        with tab8:
+            render_paginated_category("Reddit Discussion", f_reddit, "badge-reddit", "Reddit Discussion", "tab_reddit")
+        with tab9:
+            render_paginated_category("Product Hunt Launch", f_ph, "badge-ph", "Product Hunt Launch", "tab_ph")
+        with tab10:
+            render_paginated_category("AI Course", f_course, "badge-course", "AI Course", "tab_course")
+        with tab11:
+            render_paginated_category("YouTube Video", f_yt, "badge-yt", "YouTube Video", "tab_yt")
+        with tab12:
+            render_paginated_category("Prompt & Guardrail Templates", f_prompt, "badge-course", "Prompt Template", "tab_prompt")
     else:
         st.info("💡 The cloud database is currently empty. Click **Fetch New AI Updates** in the sidebar to perform your first sync!")
 
