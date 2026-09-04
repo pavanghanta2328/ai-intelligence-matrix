@@ -940,33 +940,30 @@ with tab_semantic:
                 tab = tabs[i]
                 
                 with tab:
-                    if content.startswith("Error:") or content.startswith("Failed to fetch:"):
+                    if isinstance(content, str) and (content.startswith("Error:") or content.startswith("Failed to fetch:")):
                         st.error(content)
                         continue
                         
-                    parsed_items = []
-                    pattern = r'\[\d+\] Title:\s*(.*?)\s*\[\d+\] URL Source:\s*(.*?)\s*\[\d+\] Description:\s*(.*?)(?=\[\d+\] Title:|$)'
-                    matches = re.finditer(pattern, content, re.DOTALL)
-                    for match in matches:
-                        parsed_items.append({
-                            'Title': match.group(1).strip(),
-                            'Link': match.group(2).strip(),
-                            'Description': match.group(3).strip()
-                        })
-
-                    if not parsed_items:
+                    if not content or not isinstance(content, list):
                         st.info("No relevant matches found.")
                         continue
                         
                     badge_class, badge_label = badge_map.get(cat, ("badge-blog", cat))
                     card_class = badge_class.replace("badge-", "card-")
 
-                    for item in parsed_items[:5]: # Show top 5 in tabs since we have more vertical space
-                        link_url = item.get('Link', '#')
-                        title_text = item.get('Title', 'Untitled Intelligence')
+                    for item in content[:5]: # Show top 5 in tabs since we have more vertical space
+                        link_url = item.get('url', '#')
+                        title_text = item.get('title', 'Untitled Intelligence')
                         
-                        raw_desc = item.get('Description', 'No summary provided.')
+                        raw_desc = item.get('description', '') or item.get('content', 'No summary provided.')
                         desc_text = clean_markdown(raw_desc)
+                        
+                        # Normalize item dictionary keys to match Pylance preview tooltip expectation
+                        normalized_item = {
+                            'Title': title_text,
+                            'Link': link_url,
+                            'Description': raw_desc
+                        }
                         
                         try:
                             netloc = urlparse(link_url).netloc
@@ -985,7 +982,7 @@ with tab_semantic:
                             </div>
                             <div class="link-wrapper">
                             <a class="resource-title" href="{link_url}" target="_blank">{title_text}</a>
-                            {generate_pylance_preview(item, cat, domain_host)}
+                            {generate_pylance_preview(normalized_item, cat, domain_host)}
                             </div>
                             <p class="resource-desc" style="margin-top: 8px; white-space: pre-wrap;">{desc_text[:400]}{"..." if len(desc_text) > 400 else ""}</p>
                             </div>

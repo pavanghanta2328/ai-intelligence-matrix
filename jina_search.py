@@ -37,9 +37,9 @@ def get_jina_resources_without_llm(problem_statement: str):
     """
     api_key = _get_jina_api_key()
     
-    # CRITICAL FIX 1: Ask Jina to return explicit markdown formatting
+    # CRITICAL FIX 1: Ask Jina to return structured JSON payloads
     headers = {
-        "X-Return-Format": "markdown" 
+        "Accept": "application/json" 
     }
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -61,7 +61,11 @@ def get_jina_resources_without_llm(problem_statement: str):
         try:
             response = session.get(url, headers=headers, timeout=15)
             if response.status_code == 200:
-                return category, response.text
+                try:
+                    data = response.json().get("data", [])
+                    return category, data
+                except Exception:
+                    return category, "Error: Invalid JSON response from Jina"
             else:
                 return category, f"Error: Status code {response.status_code}"
         except Exception as e:
