@@ -886,6 +886,7 @@ with tab_semantic:
             categories = list(results.keys())
             
             import re
+            import html
             from urllib.parse import urlparse
 
             badge_map = {
@@ -903,8 +904,36 @@ with tab_semantic:
                 "Prompt & Guardrail Templates": ("badge-course", "Prompt Template")
             }
             
-            # Create tabs for all categories
-            tabs = st.tabs(categories)
+            tab_name_map = {
+                "GitHub Repo": "💻 GitHub",
+                "Hugging Face Model": "🤗 HF Models",
+                "Hugging Face Dataset": "📊 HF Datasets",
+                "arXiv Research Paper": "🔬 arXiv",
+                "Packages (PyPI/NPM)": "📦 PyPI / NPM",
+                "Corporate Blog": "📰 Blogs",
+                "Medium & Dev Community": "✍️ Medium/Dev",
+                "Reddit Discussion": "💬 Reddit",
+                "Product Hunt Launch": "🚀 ProdHunt",
+                "AI Course": "🎓 Courses",
+                "YouTube Video": "📺 Videos",
+                "Prompt & Guardrail Templates": "🛡️ Prompts"
+            }
+            
+            # Create tabs for all categories with premium emojis
+            tab_labels = [tab_name_map.get(cat, cat) for cat in categories]
+            tabs = st.tabs(tab_labels)
+            
+            def clean_markdown(t):
+                # Remove images entirely
+                t = re.sub(r'!\[.*?\]\(.*?\)', '', t)
+                # Convert links to plain text
+                t = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', t)
+                # Remove header hashes
+                t = re.sub(r'^#+\s*', '', t, flags=re.MULTILINE)
+                # Remove bold, italic, code
+                t = t.replace('*', '').replace('`', '').replace('~', '')
+                # HTML escape to prevent XSS and prevent Streamlit markdown parser from breaking cards
+                return html.escape(t.strip())
             
             for i, cat in enumerate(categories):
                 content = results[cat]
@@ -935,7 +964,9 @@ with tab_semantic:
                     for item in parsed_items[:5]: # Show top 5 in tabs since we have more vertical space
                         link_url = item.get('Link', '#')
                         title_text = item.get('Title', 'Untitled Intelligence')
-                        desc_text = item.get('Description', 'No summary provided.')
+                        
+                        raw_desc = item.get('Description', 'No summary provided.')
+                        desc_text = clean_markdown(raw_desc)
                         
                         try:
                             netloc = urlparse(link_url).netloc
@@ -956,7 +987,7 @@ with tab_semantic:
                             <a class="resource-title" href="{link_url}" target="_blank">{title_text}</a>
                             {generate_pylance_preview(item, cat, domain_host)}
                             </div>
-                            <p class="resource-desc" style="margin-top: 8px;">{desc_text[:400]}{"..." if len(desc_text) > 400 else ""}</p>
+                            <p class="resource-desc" style="margin-top: 8px; white-space: pre-wrap;">{desc_text[:400]}{"..." if len(desc_text) > 400 else ""}</p>
                             </div>
                             """,
                             unsafe_allow_html=True
