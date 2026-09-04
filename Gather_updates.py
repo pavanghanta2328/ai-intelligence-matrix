@@ -886,17 +886,80 @@ with tab_semantic:
             cols = st.columns(2)
             categories = list(results.keys())
             
+            import re
+            from urllib.parse import urlparse
+
+            badge_map = {
+                "GitHub Repo": ("badge-github", "GitHub Repo"),
+                "Hugging Face Model": ("badge-hf", "Hugging Face Model"),
+                "Hugging Face Dataset": ("badge-hf", "Hugging Face Dataset"),
+                "arXiv Research Paper": ("badge-arxiv", "arXiv Research Paper"),
+                "Packages (PyPI/NPM)": ("badge-pypi", "Packages (PyPI/NPM)"),
+                "Corporate Blog": ("badge-blog", "AI Blog"),
+                "Medium & Dev Community": ("badge-blog", "Medium / Dev"),
+                "Reddit Discussion": ("badge-reddit", "Reddit Discussion"),
+                "Product Hunt Launch": ("badge-ph", "Product Hunt Launch"),
+                "AI Course": ("badge-course", "AI Course"),
+                "YouTube Video": ("badge-yt", "YouTube Video"),
+                "Prompt & Guardrail Templates": ("badge-course", "Prompt Template")
+            }
+            
             for i, cat in enumerate(categories):
                 content = results[cat]
                 col = cols[i % 2]
                 
                 with col:
-                    with st.expander(f"📌 {cat}", expanded=True):
-                        if "Error:" in content or "Failed to fetch:" in content:
+                    if "Error:" in content or "Failed to fetch:" in content:
+                        with st.expander(f"📌 {cat}", expanded=True):
                             st.error(content)
-                        elif not content.strip():
+                        continue
+                        
+                    parsed_items = []
+                    pattern = r'\[\d+\] Title:\s*(.*?)\s*\[\d+\] URL Source:\s*(.*?)\s*\[\d+\] Description:\s*(.*?)(?=\[\d+\] Title:|$)'
+                    matches = re.finditer(pattern, content, re.DOTALL)
+                    for match in matches:
+                        parsed_items.append({
+                            'Title': match.group(1).strip(),
+                            'Link': match.group(2).strip(),
+                            'Description': match.group(3).strip()
+                        })
+
+                    if not parsed_items:
+                        with st.expander(f"📌 {cat}", expanded=True):
                             st.info("No relevant matches found.")
-                        else:
-                            st.markdown(content)
+                        continue
+                        
+                    badge_class, badge_label = badge_map.get(cat, ("badge-blog", cat))
+                    card_class = badge_class.replace("badge-", "card-")
+
+                    for item in parsed_items[:3]: # Limit to top 3 for dense UI
+                        link_url = item.get('Link', '#')
+                        title_text = item.get('Title', 'Untitled Intelligence')
+                        desc_text = item.get('Description', 'No summary provided.')
+                        
+                        try:
+                            netloc = urlparse(link_url).netloc
+                            domain_host = netloc.replace("www.", "") if netloc else "external"
+                        except Exception:
+                            domain_host = "source link"
+                            
+                        st.markdown(
+                            f"""
+                            <div class="resource-card {card_class}" style="margin-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <span class="resource-badge {badge_class}">{badge_label}</span>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="domain-pill">🌐 {domain_host}</span>
+                            </div>
+                            </div>
+                            <div class="link-wrapper">
+                            <a class="resource-title" href="{link_url}" target="_blank">{title_text}</a>
+                            {generate_pylance_preview(item, cat, domain_host)}
+                            </div>
+                            <p class="resource-desc" style="margin-top: 8px;">{desc_text[:300]}{"..." if len(desc_text) > 300 else ""}</p>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
         else:
             st.warning("Please enter a query to begin.")
