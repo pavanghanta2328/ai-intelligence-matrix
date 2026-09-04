@@ -882,8 +882,7 @@ with tab_semantic:
             st.success("✅ Search complete!")
             st.markdown("---")
             
-            # 2-Column Dashboard Layout
-            cols = st.columns(2)
+            # Tabbed Dashboard Layout (matching Global Sweep)
             categories = list(results.keys())
             
             import re
@@ -904,14 +903,16 @@ with tab_semantic:
                 "Prompt & Guardrail Templates": ("badge-course", "Prompt Template")
             }
             
+            # Create tabs for all categories
+            tabs = st.tabs(categories)
+            
             for i, cat in enumerate(categories):
                 content = results[cat]
-                col = cols[i % 2]
+                tab = tabs[i]
                 
-                with col:
-                    if "Error:" in content or "Failed to fetch:" in content:
-                        with st.expander(f"📌 {cat}", expanded=True):
-                            st.error(content)
+                with tab:
+                    if content.startswith("Error:") or content.startswith("Failed to fetch:"):
+                        st.error(content)
                         continue
                         
                     parsed_items = []
@@ -925,14 +926,13 @@ with tab_semantic:
                         })
 
                     if not parsed_items:
-                        with st.expander(f"📌 {cat}", expanded=True):
-                            st.info("No relevant matches found.")
+                        st.info("No relevant matches found.")
                         continue
                         
                     badge_class, badge_label = badge_map.get(cat, ("badge-blog", cat))
                     card_class = badge_class.replace("badge-", "card-")
 
-                    for item in parsed_items[:3]: # Limit to top 3 for dense UI
+                    for item in parsed_items[:5]: # Show top 5 in tabs since we have more vertical space
                         link_url = item.get('Link', '#')
                         title_text = item.get('Title', 'Untitled Intelligence')
                         desc_text = item.get('Description', 'No summary provided.')
@@ -956,7 +956,7 @@ with tab_semantic:
                             <a class="resource-title" href="{link_url}" target="_blank">{title_text}</a>
                             {generate_pylance_preview(item, cat, domain_host)}
                             </div>
-                            <p class="resource-desc" style="margin-top: 8px;">{desc_text[:300]}{"..." if len(desc_text) > 300 else ""}</p>
+                            <p class="resource-desc" style="margin-top: 8px;">{desc_text[:400]}{"..." if len(desc_text) > 400 else ""}</p>
                             </div>
                             """,
                             unsafe_allow_html=True
