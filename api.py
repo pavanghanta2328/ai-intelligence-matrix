@@ -21,7 +21,6 @@ from scrapers import (
     get_persisted_updates_from_mongo,
     enrich_updates_in_parallel,
     fetch_all_updates_dict,
-    fetch_live_category_fallback
 )
 
 app = FastAPI(title="Enterprise AI Discovery API", docs_url=None)
@@ -182,37 +181,5 @@ def sync_updates():
             status_code=500, 
             detail=f"Error performing synchronisation: {str(e)}"
         )
-
-@app.post("/api/recommend")
-def recommend_updates(req: RecommendationRequest):
-    client = get_optional_db_client()
-    try:
-        all_data = fetch_all_updates_dict(client)
-        from usecase_matcher import scenario_matcher
-        result = scenario_matcher.match_scenario(req.scenario, all_data, top_k=req.top_k)
-        
-        # Trigger live fallbacks for low confidence categories
-        for cat in result.get("low_confidence_categories", []):
-            live_items = fetch_live_category_fallback(cat, req.scenario)
-            if live_items:
-                scored_items = []
-                for item in live_items:
-                    score, matched_kw, tip = scenario_matcher.score_item(item, result["keywords"], result.get("subject_anchor", ""), intent_profile=result.get("intent_profile"))
-                    if score >= 25.0:
-                        item_copy = dict(item)
-                        item_copy["MatchScore"] = score
-                        item_copy["MatchedKeywords"] = matched_kw
-                        item_copy["IntegrationTip"] = tip
-                        scored_items.append(item_copy)
-                
-                scored_items.sort(key=lambda x: x["MatchScore"], reverse=True)
-                result["recommendations"][cat] = scored_items[:req.top_k]
-                    
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Recommendation error: {str(e)}")
-    finally:
-        if client:
-            client.close()
 
 
