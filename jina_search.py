@@ -51,9 +51,9 @@ def extract_keywords_with_openrouter(problem_statement: str) -> str:
             "Content-Type": "application/json"
         }
         data = {
-            "model": "openai/gpt-4o-mini", # Extremely fast and reliable model on OpenRouter
+            "model": "openai/gpt-4o-mini", 
             "messages": [
-                {"role": "system", "content": "You are a search engine query optimizer. Extract a single, highly descriptive natural language sentence (8 to 12 words) that summarizes the complete meaning and unique perspective of the problem statement. Ensure it includes the unique features like human-driven testing and contributor rewards. Example: 'collaborative AI evaluation platform with human-driven testing and contributor rewards'. Output ONLY this meaningful sentence."},
+                {"role": "system", "content": "You are a search engine query optimizer. Extract a single, highly descriptive natural language sentence (8 to 12 words) that summarizes the core meaning and unique perspective of the problem statement. Ensure it captures the most unique and specific features mentioned (e.g., specific workflows, architectures, or novel mechanisms). Output ONLY this meaningful sentence without quotes."},
                 {"role": "user", "content": problem_statement}
             ]
         }
