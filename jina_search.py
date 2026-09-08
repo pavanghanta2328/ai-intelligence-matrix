@@ -30,14 +30,45 @@ def _get_jina_api_key():
             pass
     return key
 
+def extract_keywords_with_anthropic(problem_statement: str) -> str:
+    """Uses Anthropic's Claude to extract optimal search keywords, falling back to truncation."""
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        try:
+            import streamlit as st
+            key = st.secrets.get("ANTHROPIC_API_KEY")
+        except Exception:
+            pass
+            
+    if not key:
+        words = problem_statement.split()
+        short_query = " ".join(words[:12])
+        return short_query[:100] if len(short_query) > 100 else short_query
+        
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=key)
+        response = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=30,
+            temperature=0.0,
+            system="You are an expert search query optimizer. Extract the core 3-6 technologies, frameworks, or key concepts from the user's problem statement. Output ONLY the extracted keywords separated by spaces. Do not include introductory text or punctuation.",
+            messages=[{"role": "user", "content": problem_statement}]
+        )
+        return response.content[0].text.strip()
+    except Exception as e:
+        print(f"Anthropic extraction failed: {e}")
+        words = problem_statement.split()
+        short_query = " ".join(words[:12])
+        return short_query[:100] if len(short_query) > 100 else short_query
+
 def get_jina_resources_without_llm(problem_statement: str):
     """
     Fetches results directly from a natural language problem statement using 
-    Jina AI's search endpoint for all 12 predefined categories.
+    Jina AI's search endpoint, optimized via Claude keyword extraction.
     """
     api_key = _get_jina_api_key()
     
-    # CRITICAL FIX 1: Ask Jina to return structured JSON payloads
     headers = {
         "Accept": "application/json" 
     }
@@ -49,18 +80,14 @@ def get_jina_resources_without_llm(problem_statement: str):
     session = requests.Session()
     retries = Retry(total=3, backoff_factor=1, status_forcelist=[ 429, 500, 502, 503, 504 ])
     
-    # CRITICAL FIX 2: Increase pool_maxsize to match or exceed max_workers (12)
     adapter = HTTPAdapter(max_retries=retries, pool_connections=15, pool_maxsize=15)
     session.mount('https://', adapter)
     
+    # CRITICAL HYBRID FIX: Use Anthropic once to extract intelligent keywords
+    optimized_query = extract_keywords_with_anthropic(problem_statement)
+    
     def _fetch_category(category, operator):
-        # Truncate long problem statements to prevent 422 Unprocessable Entity from search engines
-        words = problem_statement.split()
-        short_query = " ".join(words[:12]) 
-        if len(short_query) > 100:
-            short_query = short_query[:100]
-            
-        combined_query = f"{short_query} {operator}"
+        combined_query = f"{optimized_query} {operator}"
         encoded_query = urllib.parse.quote(combined_query)
         url = f"https://s.jina.ai/{encoded_query}"
         
