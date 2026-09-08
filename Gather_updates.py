@@ -952,22 +952,30 @@ with tab_semantic:
                     card_class = badge_class.replace("badge-", "card-")
 
                     for item in content[:5]: # Show top 5 in tabs since we have more vertical space
-                        link_url = item.get('url', '#')
-                        title_text = item.get('title', 'Untitled Intelligence')
+                        link_url = item.get('url') or '#'
+                        title_text = item.get('title') or 'Untitled Intelligence'
                         
-                        raw_desc = item.get('description', '') or item.get('content', 'No summary provided.')
+                        raw_desc = item.get('description') or item.get('content') or 'No summary provided.'
                         desc_text = clean_markdown(raw_desc)
                         
+                        # If Jina was blocked or the text is just a captcha warning, skip it or clean it up
+                        if "You've been blocked by network security" in raw_desc or "Enable JavaScript" in raw_desc:
+                            title_text = "🔒 Secured Source"
+                            desc_text = "This intelligence source requires human verification or login. Click the link to access it directly."
+                            
                         # Normalize item dictionary keys to match Pylance preview tooltip expectation
                         normalized_item = {
                             'Title': title_text,
                             'Link': link_url,
-                            'Description': raw_desc
+                            'Description': desc_text  # Send the cleaned text to the tooltip too
                         }
                         
                         try:
-                            netloc = urlparse(link_url).netloc
-                            domain_host = netloc.replace("www.", "") if netloc else "external"
+                            if link_url != '#':
+                                netloc = urlparse(link_url).netloc
+                                domain_host = netloc.replace("www.", "") if netloc else "external"
+                            else:
+                                domain_host = "source link"
                         except Exception:
                             domain_host = "source link"
                             

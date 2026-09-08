@@ -54,7 +54,13 @@ def get_jina_resources_without_llm(problem_statement: str):
     session.mount('https://', adapter)
     
     def _fetch_category(category, operator):
-        combined_query = f"{problem_statement} {operator}"
+        # Truncate long problem statements to prevent 422 Unprocessable Entity from search engines
+        words = problem_statement.split()
+        short_query = " ".join(words[:12]) 
+        if len(short_query) > 100:
+            short_query = short_query[:100]
+            
+        combined_query = f"{short_query} {operator}"
         encoded_query = urllib.parse.quote(combined_query)
         url = f"https://s.jina.ai/{encoded_query}"
         
