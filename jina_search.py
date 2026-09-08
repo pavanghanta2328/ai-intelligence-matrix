@@ -51,7 +51,7 @@ def extract_keywords_with_openrouter(problem_statement: str) -> str:
             "Content-Type": "application/json"
         }
         data = {
-            "model": "meta-llama/llama-3-8b-instruct:free", # Completely free model on OpenRouter
+            "model": "openai/gpt-4o-mini", # Extremely fast and reliable model on OpenRouter
             "messages": [
                 {"role": "system", "content": "You are an expert search query optimizer. Extract the core 3-6 technologies, frameworks, or key concepts from the user's problem statement. Output ONLY the extracted keywords separated by spaces. Do not include introductory text or punctuation."},
                 {"role": "user", "content": problem_statement}
