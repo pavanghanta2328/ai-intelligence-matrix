@@ -53,7 +53,7 @@ def extract_keywords_with_openrouter(problem_statement: str) -> str:
         data = {
             "model": "openai/gpt-4o-mini", # Extremely fast and reliable model on OpenRouter
             "messages": [
-                {"role": "system", "content": "You are an expert search query optimizer. Extract exactly 3 to 5 of the most important single-word keywords (technologies or concepts) from the user's problem statement. Output ONLY these words separated by spaces. NO PHRASES. MAXIMUM 5 WORDS TOTAL."},
+                {"role": "system", "content": "You are a search engine query optimizer. Read the user's problem statement and convert it into a single, advanced Boolean search query. Group related synonyms using (OR) and separate the 3 or 4 most critical core concepts with spaces. Example: (collaborative OR contributor) (evaluation OR testing OR validation) (AI OR LLMs) (rewards OR claims). Output ONLY the raw boolean string. DO NOT use the word AND."},
                 {"role": "user", "content": problem_statement}
             ]
         }
@@ -61,8 +61,8 @@ def extract_keywords_with_openrouter(problem_statement: str) -> str:
         response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=8)
         if response.status_code == 200:
             extracted = response.json()['choices'][0]['message']['content'].strip()
-            # Hard limit to 5 words to prevent Jina 422 errors
-            return " ".join(extracted.split()[:5])
+            # The boolean query string captures all nuance but allows DDGS to return plenty of results.
+            return extracted
         else:
             print(f"OpenRouter Error: {response.status_code} - {response.text}")
     except Exception as e:
