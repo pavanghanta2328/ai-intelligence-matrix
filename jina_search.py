@@ -76,50 +76,60 @@ def extract_keywords_with_openrouter(problem_statement: str) -> str:
 def get_jina_resources_without_llm(problem_statement: str):
     """
     Fetches results directly from a natural language problem statement using 
-    Jina AI's search endpoint, optimized via OpenRouter keyword extraction.
+    DuckDuckGo Search, optimized via OpenRouter keyword extraction.
     """
-    api_key = _get_jina_api_key()
-    
-    headers = {
-        "Accept": "application/json" 
-    }
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
+    import time
+    import random
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        return {"Error": "Please run 'pip install ddgs' to use the free DuckDuckGo search backend."}
         
     results = {}
-    
-    session = requests.Session()
-    retries = Retry(total=3, backoff_factor=1, status_forcelist=[ 429, 500, 502, 503, 504 ])
-    
-    adapter = HTTPAdapter(max_retries=retries, pool_connections=15, pool_maxsize=15)
-    session.mount('https://', adapter)
     
     # CRITICAL HYBRID FIX: Use OpenRouter once to extract intelligent keywords for free
     optimized_query = extract_keywords_with_openrouter(problem_statement)
     
     def _fetch_category(category, operator):
+        # Jitter to prevent massive 12-request spike triggering DDG anti-bot
+        time.sleep(random.uniform(0.1, 0.8))
+        
         combined_query = f"{optimized_query} {operator}"
-        encoded_query = urllib.parse.quote(combined_query)
-        url = f"https://s.jina.ai/{encoded_query}"
         
         try:
-            response = session.get(url, headers=headers, timeout=15)
-            if response.status_code == 200:
-                try:
-                    data = response.json().get("data", [])
-                    return category, data
-                except Exception:
-                    return category, "Error: Invalid JSON response from Jina"
-            else:
-                return category, f"Error: Status code {response.status_code}"
+            category_data = []
+            with DDGS() as ddgs:
+                # max_results=5 to mimic the original Jina payload size
+                for r in ddgs.text(combined_query, max_results=5):
+                    # Map DDG keys to Jina expected keys to prevent UI breakages
+                    category_data.append({
+                        "title": r.get("title", "Untitled"),
+                        "url": r.get("href", "#"),
+                        "description": r.get("body", "No summary provided.")
+                    })
+            return category, category_data
+            
         except Exception as e:
-            return category, f"Failed to fetch: {str(e)}"
+            # Simple fallback/graceful degradation if temporary rate limit is hit
+            time.sleep(random.uniform(1.0, 2.5))
+            try:
+                category_data = []
+                with DDGS() as ddgs:
+                    for r in ddgs.text(combined_query, max_results=3):
+                        category_data.append({
+                            "title": r.get("title", "Untitled"),
+                            "url": r.get("href", "#"),
+                            "description": r.get("body", "No summary provided.")
+                        })
+                return category, category_data
+            except Exception as e2:
+                return category, f"Rate limited/Failed to fetch: {str(e2)}"
             
     # Fetch in parallel for speed
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
         futures = {executor.submit(_fetch_category, cat, op): cat for cat, op in JINA_CATEGORY_MAPPING.items()}
         for future in concurrent.futures.as_completed(futures):
-            cat, result_text = future.result()
-            results[cat] = result_text
+            cat, result_data = future.result()
+            results[cat] = result_data
 
     return results
