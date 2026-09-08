@@ -53,14 +53,16 @@ def extract_keywords_with_openrouter(problem_statement: str) -> str:
         data = {
             "model": "openai/gpt-4o-mini", # Extremely fast and reliable model on OpenRouter
             "messages": [
-                {"role": "system", "content": "You are an expert search query optimizer. Extract the core 3-6 technologies, frameworks, or key concepts from the user's problem statement. Output ONLY the extracted keywords separated by spaces. Do not include introductory text or punctuation."},
+                {"role": "system", "content": "You are an expert search query optimizer. Extract exactly 3 to 5 of the most important single-word keywords (technologies or concepts) from the user's problem statement. Output ONLY these words separated by spaces. NO PHRASES. MAXIMUM 5 WORDS TOTAL."},
                 {"role": "user", "content": problem_statement}
             ]
         }
         # Use a short timeout so the UI doesn't hang forever if OpenRouter is slow
         response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=8)
         if response.status_code == 200:
-            return response.json()['choices'][0]['message']['content'].strip()
+            extracted = response.json()['choices'][0]['message']['content'].strip()
+            # Hard limit to 5 words to prevent Jina 422 errors
+            return " ".join(extracted.split()[:5])
         else:
             print(f"OpenRouter Error: {response.status_code} - {response.text}")
     except Exception as e:
