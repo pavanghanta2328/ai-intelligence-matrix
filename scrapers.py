@@ -201,7 +201,7 @@ def get_pypi_updates():
             desc = entry.get('summary', '')
             if any(k in title.lower() or k in desc.lower() for k in keywords):
                 packages.append({
-                    "Type": "PyPI Release",
+                    "Type": "Packages (PyPI/NPM)",
                     "Title": title,
                     "Description": desc[:200] + "..." if desc else "New package release on PyPI.",
                     "Link": entry.get('link', 'https://pypi.org'),
@@ -210,7 +210,7 @@ def get_pypi_updates():
         if not packages and feed.entries:
             for entry in feed.entries[:5]:
                 packages.append({
-                    "Type": "PyPI Release",
+                    "Type": "Packages (PyPI/NPM)",
                     "Title": entry.get('title', 'Unknown Package'),
                     "Description": entry.get('summary', '')[:200] + "...",
                     "Link": entry.get('link', 'https://pypi.org'),
@@ -701,7 +701,7 @@ ALL_12_CATEGORIES = [
     "Hugging Face Model",
     "Hugging Face Dataset",
     "arXiv Research Paper",
-    "PyPI Release",
+    "Packages (PyPI/NPM)",
     "Corporate Blog",
     "Medium & Dev Community",
     "Reddit Discussion",

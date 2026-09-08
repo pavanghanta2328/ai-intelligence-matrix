@@ -809,7 +809,7 @@ with tab_main:
             f_hf = all_categories_data.get("Hugging Face Model", [])
             f_hf_ds = all_categories_data.get("Hugging Face Dataset", [])
             f_arxiv = all_categories_data.get("arXiv Research Paper", [])
-            f_pypi = all_categories_data.get("PyPI Release", [])
+            f_pypi = all_categories_data.get("Packages (PyPI/NPM)", [])
             f_blog = all_categories_data.get("Corporate Blog", [])
             f_medium = all_categories_data.get("Medium & Dev Community", [])
             f_reddit = all_categories_data.get("Reddit Discussion", [])
@@ -823,7 +823,7 @@ with tab_main:
                 f"🤗 HF Models ({len(f_hf)})", 
                 f"📊 HF Datasets ({len(f_hf_ds)})", 
                 f"🔬 arXiv ({len(f_arxiv)})",
-                f"📦 PyPI ({len(f_pypi)})",
+                f"📦 PyPI / NPM ({len(f_pypi)})",
                 f"📰 Blogs ({len(f_blog)})",
                 f"✍️ Medium/Dev ({len(f_medium)})",
                 f"💬 Reddit ({len(f_reddit)})",
@@ -842,7 +842,7 @@ with tab_main:
             with tab4:
                 render_paginated_category("arXiv Research Paper", f_arxiv, "badge-arxiv", "arXiv Research Paper", "tab_arxiv")
             with tab5:
-                render_paginated_category("PyPI Release", f_pypi, "badge-pypi", "PyPI Release", "tab_pypi")
+                render_paginated_category("Packages (PyPI/NPM)", f_pypi, "badge-pypi", "Packages (PyPI/NPM)", "tab_pypi")
             with tab6:
                 render_paginated_category("Corporate Blog", f_blog, "badge-blog", "AI Blog", "tab_blog")
             with tab7:
