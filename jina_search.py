@@ -53,7 +53,7 @@ def extract_keywords_with_openrouter(problem_statement: str) -> str:
         data = {
             "model": "openai/gpt-4o-mini", # Extremely fast and reliable model on OpenRouter
             "messages": [
-                {"role": "system", "content": "You are a search engine query optimizer. Read the user's problem statement and convert it into a single, advanced Boolean search query. Group related synonyms using (OR) and separate the 3 or 4 most critical core concepts with spaces. Example: (collaborative OR contributor) (evaluation OR testing OR validation) (AI OR LLMs) (rewards OR claims). Output ONLY the raw boolean string. DO NOT use the word AND."},
+                {"role": "system", "content": "You are a search engine query optimizer. Extract a single, highly descriptive 5-to-8 word sentence fragment that summarizes the core business and technological proposition of the problem statement. Example: 'collaborative AI evaluation and reward platform'. Output ONLY this short meaningful phrase."},
                 {"role": "user", "content": problem_statement}
             ]
         }
