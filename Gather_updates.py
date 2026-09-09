@@ -21,12 +21,11 @@ from scrapers import (
     fetch_all_updates_dict
 )
 
-from jina_search import get_jina_resources_without_llm
+from jina_search import get_semantic_discovery_results
 import streamlit as st
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_semantic_results(query: str):
-    return get_jina_resources_without_llm(query)
+def fetch_semantic_results_v2(query: str):
+    return get_semantic_discovery_results(query)
 
 
 
@@ -876,8 +875,8 @@ with tab_semantic:
     
     if st.button("Search Intelligence Network", type="primary"):
         if query:
-            with st.spinner("⚡ Connecting to Jina AI... Scanning 12 platforms..."):
-                results = fetch_semantic_results(query)
+            with st.spinner("⚡ Connecting to Google Serper... Dynamically scanning relevant platforms..."):
+                results = fetch_semantic_results_v2(query)
                 
             st.success("✅ Search complete!")
             st.markdown("---")
@@ -895,13 +894,13 @@ with tab_semantic:
                 "Hugging Face Dataset": ("badge-hf", "Hugging Face Dataset"),
                 "arXiv Research Paper": ("badge-arxiv", "arXiv Research Paper"),
                 "Packages (PyPI/NPM)": ("badge-pypi", "Packages (PyPI/NPM)"),
-                "Corporate Blog": ("badge-blog", "AI Blog"),
+                "Engineering Blogs": ("badge-blog", "Tech Blog"),
                 "Medium & Dev Community": ("badge-blog", "Medium / Dev"),
                 "Reddit Discussion": ("badge-reddit", "Reddit Discussion"),
                 "Product Hunt Launch": ("badge-ph", "Product Hunt Launch"),
-                "AI Course": ("badge-course", "AI Course"),
+                "Online Course": ("badge-course", "Online Course"),
                 "YouTube Video": ("badge-yt", "YouTube Video"),
-                "Prompt & Guardrail Templates": ("badge-course", "Prompt Template")
+                "Code Snippets & Gists": ("badge-github", "Code Snippet")
             }
             
             tab_name_map = {
@@ -910,13 +909,13 @@ with tab_semantic:
                 "Hugging Face Dataset": "📊 HF Datasets",
                 "arXiv Research Paper": "🔬 arXiv",
                 "Packages (PyPI/NPM)": "📦 PyPI / NPM",
-                "Corporate Blog": "📰 Blogs",
+                "Engineering Blogs": "📰 Tech Blogs",
                 "Medium & Dev Community": "✍️ Medium/Dev",
                 "Reddit Discussion": "💬 Reddit",
                 "Product Hunt Launch": "🚀 ProdHunt",
-                "AI Course": "🎓 Courses",
+                "Online Course": "🎓 Courses",
                 "YouTube Video": "📺 Videos",
-                "Prompt & Guardrail Templates": "🛡️ Prompts"
+                "Code Snippets & Gists": "🛠️ Snippets"
             }
             
             # Create tabs for all categories with premium emojis
