@@ -939,7 +939,7 @@ with tab_semantic:
                 tab = tabs[i]
                 
                 with tab:
-                    if isinstance(content, str) and (content.startswith("Error:") or content.startswith("Failed to fetch:")):
+                    if isinstance(content, str) and (content.startswith("Error:") or content.startswith("Failed to fetch:") or content.startswith("Serper API Error:")):
                         st.error(content)
                         continue
                         
