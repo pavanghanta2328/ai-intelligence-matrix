@@ -881,8 +881,12 @@ with tab_semantic:
             st.success("✅ Search complete!")
             st.markdown("---")
             
-            # Tabbed Dashboard Layout (matching Global Sweep)
-            categories = list(results.keys())
+            # Only create tabs for categories that actually have results or error messages
+            categories = [cat for cat in results.keys() if results[cat]]
+            
+            if not categories:
+                st.warning("No relevant resources were found across any platform for this query.")
+                st.stop()
             
             import re
             import html
