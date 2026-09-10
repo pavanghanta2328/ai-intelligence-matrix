@@ -70,7 +70,7 @@ You must output valid JSON in this exact format:
             ]
         }
         # Use a short timeout so the UI doesn't hang forever if OpenRouter is slow
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=12)
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=15)
         if response.status_code == 200:
             extracted = response.json()['choices'][0]['message']['content'].strip()
             return json.loads(extracted)
