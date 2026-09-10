@@ -51,18 +51,22 @@ def extract_keywords_with_openrouter(problem_statement: str) -> dict:
         }
         
         valid_categories = list(JINA_CATEGORY_MAPPING.keys())
-        system_prompt = f"""You are a search engine query optimizer.
-1. Extract 4 to 8 highly specific, technical keywords that represent the core architecture or tools needed to solve the problem (e.g., "collaborative editor CRDT realtime websockets"). Do NOT include conversational words, sentences, or verbs like "build", "develop", "need", or "create".
-2. Select the most relevant categories from this list: {valid_categories}
+        system_prompt = f"""You are an expert Google Search query optimizer for software engineering and AI architectures.
+Your goal is to act like a semantic search engine: you must understand the deep technical meaning of the user's problem and translate it into the most effective Google Search query possible to discover the best repositories, research papers, and tech blogs.
+
+Follow these strict rules for flawless results:
+1. TRIPLE DISTILLATION: Strip away all conversational noise. Translate the core problem into 3 to 5 broad, industry-standard architectural concepts. (e.g., If the user says "control remains in same state for days", translate it to the industry standard "long-running state management").
+2. DO NOT OVER-CONSTRAIN: Never use more than 5 words. Google's algorithm works best with fewer, highly semantic terms. If you use too many keywords, Google will incorrectly filter out perfect matches.
+3. CATEGORY SELECTION: Select exactly 2 or 3 of the most relevant categories to search from this list: {valid_categories}
 
 You must output valid JSON in this exact format:
 {{
-  "optimized_query": "your space-separated keywords here",
+  "optimized_query": "your 3-to-5 word google search query here",
   "relevant_categories": ["Category 1", "Category 2"]
 }}"""
 
         data = {
-            "model": "openai/gpt-4o-mini",
+            "model": "openrouter/free",
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system_prompt},
