@@ -62,7 +62,7 @@ You must output valid JSON in this exact format:
 }}"""
 
         data = {
-            "model": "openrouter/free",
+            "model": "openai/gpt-4o-mini",
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -84,12 +84,23 @@ You must output valid JSON in this exact format:
 def get_semantic_discovery_results(problem_statement: str):
     """
     Fetches results directly from a natural language problem statement using 
-    duckduckgo-search, optimized via OpenRouter dynamic extraction.
+    Serper.dev (Google Search API), optimized via OpenRouter dynamic extraction.
     """
     import time
     import random
     
     results = {}
+    
+    serper_key = os.environ.get("SERPER_API_KEY")
+    if not serper_key:
+        try:
+            import streamlit as st
+            serper_key = st.secrets.get("SERPER_API_KEY")
+        except Exception:
+            pass
+            
+    if not serper_key:
+        return {"Error": "Please add SERPER_API_KEY to your .streamlit/secrets.toml file to use the Google Search backend."}
     
     # CRITICAL HYBRID FIX: Use OpenRouter once to extract intelligent keywords for free
     extraction_data = extract_keywords_with_openrouter(problem_statement)
@@ -101,23 +112,36 @@ def get_semantic_discovery_results(problem_statement: str):
         time.sleep(random.uniform(0.1, 0.5))
         
         combined_query = f"{optimized_query} {operator}"
+        url = "https://google.serper.dev/search"
+        payload = {
+            "q": combined_query,
+            "num": 5
+        }
+        headers = {
+            "X-API-KEY": serper_key,
+            "Content-Type": "application/json"
+        }
         
         try:
-            from duckduckgo_search import DDGS
-            with DDGS() as ddgs:
-                organic_results = list(ddgs.text(combined_query, max_results=5))
+            response = requests.post(url, headers=headers, json=payload, timeout=10)
+            if response.status_code != 200:
+                return category, f"Serper API Error: {response.status_code} - {response.text}"
+                
+            data = response.json()
+            organic_results = data.get("organic", [])
             
             category_data = []
-            for r in organic_results:
+            for r in organic_results[:5]:
+                # Map Serper keys to expected frontend keys to prevent UI breakages
                 category_data.append({
                     "title": r.get("title", "Untitled"),
-                    "url": r.get("href", "#"),
-                    "description": r.get("body", "No summary provided.")
+                    "url": r.get("link", "#"),
+                    "description": r.get("snippet", "No summary provided.")
                 })
             return category, category_data
             
         except Exception as e:
-            return category, f"Failed to fetch from DuckDuckGo: {str(e)}"
+            return category, f"Failed to fetch from Serper: {str(e)}"
             
     # Fetch in parallel for speed, but ONLY for the relevant categories determined by the LLM
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:

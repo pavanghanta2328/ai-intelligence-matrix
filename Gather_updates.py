@@ -875,7 +875,7 @@ with tab_semantic:
     
     if st.button("Search Intelligence Network", type="primary"):
         if query:
-            with st.spinner("⚡ Connecting to DuckDuckGo Search... Dynamically scanning relevant platforms..."):
+            with st.spinner("⚡ Connecting to Google Serper... Dynamically scanning relevant platforms..."):
                 results = fetch_semantic_results_v2(query)
                 
             st.success("✅ Search complete!")
